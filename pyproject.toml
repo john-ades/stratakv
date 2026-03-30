@@ -1,0 +1,26 @@
+[project]
+name = "stratakv-torch"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "datasets>=4.8.4",
+    "huggingface-hub>=1.8.0",
+    "networkx>=3.6.1",
+    "numpy>=2.4.4",
+    "pandas>=3.0.1",
+    "rich>=14.3.3",
+    "safetensors>=0.7.0",
+    "torch>=2.11.0",
+    "transformers>=5.4.0",
+    "typer>=0.24.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

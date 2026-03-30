@@ -1,0 +1,125 @@
+import torch
+from typing import Optional, Tuple, Dict, Any, List
+try:
+    from transformers.cache_utils import DynamicCache as BaseCache
+except ImportError:
+    # Fallback if transformers is not installed or too old
+    class BaseCache:
+        pass
+
+from .core.config import StrataKVConfig
+from .tiers.tier0_sink import Tier0Sink
+from .tiers.tier1_recent import Tier1Recent
+
+class StrataKVCache(BaseCache):
+    """
+    StrataKVCache manages the tiered cascading cache sequence for all layers 
+    during an LLM forward pass.
+    """
+    def __init__(self, config: StrataKVConfig):
+        super().__init__()
+        self.config = config
+        
+        # We hold lists of tiers per layer index
+        self._tier0_sinks: List[Optional[Tier0Sink]] = []
+        self._tier1_recents: List[Optional[Tier1Recent]] = []
+        
+        self.seen_tokens = 0
+        
+    def _ensure_initialized(self, layer_idx: int):
+        # Dynamically extend lists to support up to layer_idx
+        while len(self._tier0_sinks) <= layer_idx:
+            if self.config.enable_tier0:
+                self._tier0_sinks.append(Tier0Sink(self.config.tier0_size, len(self._tier0_sinks)))
+            else:
+                self._tier0_sinks.append(None)
+                
+            if self.config.enable_tier1:
+                self._tier1_recents.append(Tier1Recent(self.config.tier1_size, len(self._tier1_recents)))
+            else:
+                self._tier1_recents.append(None)
+
+    def update(
+        self,
+        key_states: torch.Tensor,
+        value_states: torch.Tensor,
+        layer_idx: int,
+        cache_kwargs: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Updates the cache with the new key/value states.
+        Then, reconstructs the full kv-cache for this layer to return to the model attention mechanism.
+        """
+        self._ensure_initialized(layer_idx)
+        
+        # 1) Pass tokens through Tier 0 Sink first
+        evicted_keys = key_states
+        evicted_values = value_states
+        
+        t0 = self._tier0_sinks[layer_idx]
+        if t0 is not None and evicted_keys is not None:
+            evicted_keys, evicted_values = t0.push(evicted_keys, evicted_values)
+            
+        # 2) Pass whatever spills out into Tier 1 Sliding Window
+        t1 = self._tier1_recents[layer_idx]
+        if t1 is not None and evicted_keys is not None:
+            # We push evicted from T0 into T1
+            dropped_keys, dropped_values = t1.push(evicted_keys, evicted_values)
+            # In purely T0+T1 baseline, anything dropped from T1 is lost permanently (or moved to T2/T3 later)
+            
+        # 3) Reconstruct the view of the full cache for this layer
+        all_k = []
+        all_v = []
+        
+        if t0 is not None:
+            k0, v0 = t0.get_cache()
+            if k0 is not None:
+                all_k.append(k0)
+                all_v.append(v0)
+                
+        if t1 is not None:
+            k1, v1 = t1.get_cache()
+            if k1 is not None:
+                all_k.append(k1)
+                all_v.append(v1)
+        
+        
+        # If no tiers are enabled (unlikely), just return incoming
+        if len(all_k) == 0:
+            return key_states, value_states
+            
+        full_k = torch.cat(all_k, dim=2)
+        full_v = torch.cat(all_v, dim=2)
+        
+        if layer_idx == 0:
+            # Update seen tokens only once per layer cycle
+            # This is technically `seq_len` returned to the model max, 
+            # but wait, the model expects cache length to be total length if DynamicCache.
+            # We can track the internal size.
+            pass
+            
+        return full_k, full_v
+        
+    def get_seq_length(self, layer_idx: Optional[int] = 0) -> int:
+        if len(self._tier0_sinks) <= layer_idx:
+            return 0
+        l = 0
+        t0 = self._tier0_sinks[layer_idx]
+        if t0 and t0.k_cache is not None:
+            l += t0.k_cache.shape[2]
+            
+        t1 = self._tier1_recents[layer_idx]
+        if t1 and t1.k_cache is not None:
+            l += t1.k_cache.shape[2]
+            
+        return l
+        
+    def get_max_length(self) -> Optional[int]:
+        cap = 0
+        if self.config.enable_tier0: cap += self.config.tier0_size
+        if self.config.enable_tier1: cap += self.config.tier1_size
+        return cap
+        
+    def reorder_cache(self, beam_idx: torch.LongTensor):
+        """Used in beam search. Not implemented for baseline."""
+        raise NotImplementedError("Beam search not supported yet in StrataKVCache")
