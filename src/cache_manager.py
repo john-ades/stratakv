@@ -11,6 +11,7 @@ from .core.config import StrataKVConfig
 from .tiers.tier0_sink import Tier0Sink
 from .tiers.tier1_recent import Tier1Recent
 from .tiers.tier2_latent import Tier2Latent
+from .compression.transmla import TransMLACruncher
 
 class StrataKVCache(BaseCache):
     """
@@ -25,6 +26,7 @@ class StrataKVCache(BaseCache):
         self._tier0_sinks: List[Optional[Tier0Sink]] = []
         self._tier1_recents: List[Optional[Tier1Recent]] = []
         self._tier2_latents: List[Optional[Tier2Latent]] = []
+        self._tier2_crunchers: List[Optional[TransMLACruncher]] = []
         
         self.seen_tokens = 0
         
@@ -43,8 +45,17 @@ class StrataKVCache(BaseCache):
                 
             if self.config.enable_tier2:
                 self._tier2_latents.append(Tier2Latent(self.config.tier2_size, len(self._tier2_latents)))
+                self._tier2_crunchers.append(TransMLACruncher(
+                    layer_idx=len(self._tier2_crunchers),
+                    num_kv_heads=self.config.num_kv_heads,
+                    head_dim=self.config.head_dim,
+                    rope_retained_dim=self.config.transmla_rope_dim,
+                    target_rank=self.config.transmla_target_rank,
+                    matrices_path=self.config.transmla_matrices_path
+                ))
             else:
                 self._tier2_latents.append(None)
+                self._tier2_crunchers.append(None)
 
     def update(
         self,
@@ -69,12 +80,26 @@ class StrataKVCache(BaseCache):
             
         # 2) Pass whatever spills out into Tier 1 Sliding Window
         t1 = self._tier1_recents[layer_idx]
+        dropped_keys, dropped_values = None, None
         if t1 is not None and evicted_keys is not None:
             # We push evicted from T0 into T1
             dropped_keys, dropped_values = t1.push(evicted_keys, evicted_values)
-            # In purely T0+T1 baseline, anything dropped from T1 is lost permanently (or moved to T2/T3 later)
             
-        # 3) Reconstruct the view of the full cache for this layer
+        # 3) Crunch tokens from Tier 1 into Tier 2 via TransMLA
+        t2 = self._tier2_latents[layer_idx]
+        cruncher = self._tier2_crunchers[layer_idx]
+        if t2 is not None and cruncher is not None and dropped_keys is not None and dropped_values is not None:
+            # Ensure matrices are on the right device and dtype
+            cruncher.to(device=dropped_keys.device, dtype=dropped_keys.dtype)
+            
+            # Crunch to latent C_kv and positional K_rope
+            c_kv, k_rope = cruncher(dropped_keys, dropped_values)
+            
+            # Evicted from T2 are just discarded from memory entirely (or moved to Tier 3)
+            # For now, baseline T2 discards them
+            t2.push(c_kv, k_rope)
+            
+        # 4) Reconstruct the view of the full cache for this layer
         all_k = []
         all_v = []
         
