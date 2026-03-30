@@ -10,6 +10,7 @@ except ImportError:
 from .core.config import StrataKVConfig
 from .tiers.tier0_sink import Tier0Sink
 from .tiers.tier1_recent import Tier1Recent
+from .tiers.tier2_latent import Tier2Latent
 
 class StrataKVCache(BaseCache):
     """
@@ -23,6 +24,7 @@ class StrataKVCache(BaseCache):
         # We hold lists of tiers per layer index
         self._tier0_sinks: List[Optional[Tier0Sink]] = []
         self._tier1_recents: List[Optional[Tier1Recent]] = []
+        self._tier2_latents: List[Optional[Tier2Latent]] = []
         
         self.seen_tokens = 0
         
@@ -38,6 +40,11 @@ class StrataKVCache(BaseCache):
                 self._tier1_recents.append(Tier1Recent(self.config.tier1_size, len(self._tier1_recents)))
             else:
                 self._tier1_recents.append(None)
+                
+            if self.config.enable_tier2:
+                self._tier2_latents.append(Tier2Latent(self.config.tier2_size, len(self._tier2_latents)))
+            else:
+                self._tier2_latents.append(None)
 
     def update(
         self,
@@ -112,12 +119,18 @@ class StrataKVCache(BaseCache):
         if t1 and t1.k_cache is not None:
             l += t1.k_cache.shape[2]
             
+        t2 = self._tier2_latents[layer_idx]
+        if t2 and t2.k_cache is not None:
+            seq_dim = 1 if t2.k_cache.dim() == 3 else 2
+            l += t2.k_cache.shape[seq_dim]
+            
         return l
         
     def get_max_length(self) -> Optional[int]:
         cap = 0
         if self.config.enable_tier0: cap += self.config.tier0_size
         if self.config.enable_tier1: cap += self.config.tier1_size
+        if self.config.enable_tier2: cap += self.config.tier2_size
         return cap
         
     def reorder_cache(self, beam_idx: torch.LongTensor):

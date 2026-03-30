@@ -4,6 +4,7 @@ from dataclasses import dataclass
 class StrataKVConfig:
     tier0_size: int = 4
     tier1_size: int = 2048
+    tier2_size: int = 8192
     enable_tier0: bool = True
     enable_tier1: bool = True
     enable_tier2: bool = False
