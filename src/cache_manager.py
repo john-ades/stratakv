@@ -26,7 +26,6 @@ class StrataKVCache(BaseCache):
         self._tier0_sinks: List[Optional[Tier0Sink]] = []
         self._tier1_recents: List[Optional[Tier1Recent]] = []
         self._tier2_latents: List[Optional[Tier2Latent]] = []
-        self._tier2_crunchers: List[Optional[TransMLACruncher]] = []
         
         self.seen_tokens = 0
         
@@ -45,17 +44,8 @@ class StrataKVCache(BaseCache):
                 
             if self.config.enable_tier2:
                 self._tier2_latents.append(Tier2Latent(self.config.tier2_size, len(self._tier2_latents)))
-                self._tier2_crunchers.append(TransMLACruncher(
-                    layer_idx=len(self._tier2_crunchers),
-                    num_kv_heads=self.config.num_kv_heads,
-                    head_dim=self.config.head_dim,
-                    rope_retained_dim=self.config.transmla_rope_dim,
-                    target_rank=self.config.transmla_target_rank,
-                    matrices_path=self.config.transmla_matrices_path
-                ))
             else:
                 self._tier2_latents.append(None)
-                self._tier2_crunchers.append(None)
 
     def update(
         self,
@@ -87,7 +77,10 @@ class StrataKVCache(BaseCache):
             
         # 3) Crunch tokens from Tier 1 into Tier 2 via TransMLA
         t2 = self._tier2_latents[layer_idx]
-        cruncher = self._tier2_crunchers[layer_idx]
+        cruncher = None
+        if cache_kwargs is not None:
+            cruncher = cache_kwargs.get("strata_cruncher", None)
+            
         if t2 is not None and cruncher is not None and dropped_keys is not None and dropped_values is not None:
             # Ensure matrices are on the right device and dtype
             cruncher.to(device=dropped_keys.device, dtype=dropped_keys.dtype)
@@ -158,6 +151,17 @@ class StrataKVCache(BaseCache):
         if self.config.enable_tier2: cap += self.config.tier2_size
         return cap
         
+    def get_tier2_cache(self, layer_idx: int) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
+        """
+        Returns (C_kv_t2, K_rope_t2) for the given layer.
+        """
+        if len(self._tier2_latents) <= layer_idx:
+            return None, None
+        t2 = self._tier2_latents[layer_idx]
+        if t2 is None:
+            return None, None
+        return t2.get_cache()
+
     def reorder_cache(self, beam_idx: torch.LongTensor):
         """Used in beam search. Not implemented for baseline."""
         raise NotImplementedError("Beam search not supported yet in StrataKVCache")

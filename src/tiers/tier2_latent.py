@@ -14,38 +14,35 @@ class Tier2Latent(StrataTier):
         Pushes compressed representations into Tier 2.
         Because this is a latent format, we accept `c_kv` instead of `keys` and `k_rope` instead of `values`.
         """
-        # Determine sequence length dimension based on tensor rank:
-        # If [batch, seq_len, dim], dim=1
-        # If [batch, heads, seq_len, dim], dim=2
-        seq_dim = 1 if c_kv.dim() == 3 else 2
+        seq_dim_c = 1 if c_kv.dim() == 3 else 2
+        seq_dim_k = 1 if k_rope.dim() == 3 else 2
         
         # Append incoming to existing
         if self.k_cache is None:
-             # c_kv replaces keys
             self.k_cache = c_kv
-            # k_rope replaces values
             self.v_cache = k_rope
         else:
-            self.k_cache = torch.cat([self.k_cache, c_kv], dim=seq_dim)
-            self.v_cache = torch.cat([self.v_cache, k_rope], dim=seq_dim)
+            self.k_cache = torch.cat([self.k_cache, c_kv], dim=seq_dim_c)
+            self.v_cache = torch.cat([self.v_cache, k_rope], dim=seq_dim_k)
             
-        self.seq_len = self.k_cache.shape[seq_dim]
+        self.seq_len = self.k_cache.shape[seq_dim_c]
         
         # If capacity > 0 and we exceed it, evict earliest part of the cache
         if self.capacity > 0 and self.seq_len > self.capacity:
             evict_len = self.seq_len - self.capacity
             
-            if seq_dim == 1:
+            if seq_dim_c == 1:
                 evicted_c_kv = self.k_cache[:, :evict_len, ...]
-                evicted_k_rope = self.v_cache[:, :evict_len, ...]
-                
                 self.k_cache = self.k_cache[:, evict_len:, ...]
-                self.v_cache = self.v_cache[:, evict_len:, ...]
             else:
                 evicted_c_kv = self.k_cache[:, :, :evict_len, ...]
-                evicted_k_rope = self.v_cache[:, :, :evict_len, ...]
-                
                 self.k_cache = self.k_cache[:, :, evict_len:, ...]
+                
+            if seq_dim_k == 1:
+                evicted_k_rope = self.v_cache[:, :evict_len, ...]
+                self.v_cache = self.v_cache[:, evict_len:, ...]
+            else:
+                evicted_k_rope = self.v_cache[:, :, :evict_len, ...]
                 self.v_cache = self.v_cache[:, :, evict_len:, ...]
                 
             self.seq_len = self.capacity
