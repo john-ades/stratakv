@@ -143,7 +143,7 @@ def patch_llama_for_strata(model, config: StrataKVConfig):
                     target_rank=config.transmla_target_rank,
                     matrices_path=config.transmla_matrices_path
                 )
-                module.add_module("strata_absorber", absorber)
+                module.add_module("strata_absorber", absorber.to(model.dtype).to(model.device))
                 
                 from ...compression.transmla import TransMLACruncher
                 cruncher = TransMLACruncher(
@@ -154,6 +154,6 @@ def patch_llama_for_strata(model, config: StrataKVConfig):
                     target_rank=config.transmla_target_rank,
                     matrices_path=config.transmla_matrices_path
                 )
-                module.add_module("strata_cruncher", cruncher)
+                module.add_module("strata_cruncher", cruncher.to(model.dtype).to(model.device))
                 
             module.forward = types.MethodType(_strata_llama_attention_forward, module)

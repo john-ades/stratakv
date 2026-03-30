@@ -17,7 +17,8 @@ def calculate_rorope(K_x: torch.Tensor, K_y: torch.Tensor) -> torch.Tensor:
     sigma_sum = sigma_x + sigma_y
     
     # Eigendecomposition to maximize variance 
-    eigenvalues, eigenvectors = torch.linalg.eigh(sigma_sum)
+    eigenvalues, eigenvectors = torch.linalg.eigh(sigma_sum.float())
+    eigenvectors = eigenvectors.to(sigma_sum.dtype)
     
     # Sort descending
     sorted_indices = torch.argsort(eigenvalues, descending=True)
