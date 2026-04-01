@@ -16,3 +16,9 @@ class StrataKVConfig:
     transmla_target_rank: int = 32
     transmla_rope_dim: int = 64
     transmla_matrices_path: str = None
+    
+    # Tier 3 ABIT Clustering Parameters
+    abit_window_size: int = 3
+    abit_min_split_tokens: int = 5
+    abit_max_split_tokens: int = 128
+    abit_initial_threshold: float = 0.5

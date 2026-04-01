@@ -12,6 +12,7 @@ from .tiers.tier0_sink import Tier0Sink
 from .tiers.tier1_recent import Tier1Recent
 from .tiers.tier2_latent import Tier2Latent
 from .compression.transmla import TransMLACruncher
+from .clustering.buffer import AbitClusterBuffer
 
 class StrataKVCache(BaseCache):
     """
@@ -26,6 +27,7 @@ class StrataKVCache(BaseCache):
         self._tier0_sinks: List[Optional[Tier0Sink]] = []
         self._tier1_recents: List[Optional[Tier1Recent]] = []
         self._tier2_latents: List[Optional[Tier2Latent]] = []
+        self._tier3_buffers: List[Optional[AbitClusterBuffer]] = []
         
         self.seen_tokens = 0
         
@@ -46,6 +48,11 @@ class StrataKVCache(BaseCache):
                 self._tier2_latents.append(Tier2Latent(self.config.tier2_size, len(self._tier2_latents)))
             else:
                 self._tier2_latents.append(None)
+                
+            if self.config.enable_tier3:
+                self._tier3_buffers.append(AbitClusterBuffer(self.config))
+            else:
+                self._tier3_buffers.append(None)
 
     def update(
         self,
@@ -91,6 +98,13 @@ class StrataKVCache(BaseCache):
             # Evicted from T2 are just discarded from memory entirely (or moved to Tier 3)
             # For now, baseline T2 discards them
             t2.push(c_kv, k_rope)
+            
+            # Phase 1: Push latents into the Tier 3 ABIT buffer to detect semantic boundaries
+            t3_buf = self._tier3_buffers[layer_idx]
+            if t3_buf is not None:
+                sealed_clusters = t3_buf.push(c_kv, k_rope)
+                # Currently we aren't doing anything with `sealed_clusters`
+                # In Phase 3, these will be dispatched to the SONIC cruncher.
             
         # 4) Reconstruct the view of the full cache for this layer
         all_k = []
