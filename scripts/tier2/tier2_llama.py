@@ -6,7 +6,7 @@ from rich.console import Console
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 # Add project root to python path
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(project_root)
 
 from src.core.config import StrataKVConfig

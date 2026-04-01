@@ -4,7 +4,7 @@ import time
 import typer
 from rich.console import Console
 
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(project_root)
 
 # Import the core extraction function

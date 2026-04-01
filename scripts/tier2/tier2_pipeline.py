@@ -27,7 +27,7 @@ def main():
     # Step 1: Phase 1 Offline Calibration (Fast Extraction)
     # We use very few samples and a small target rank to run fast
     extraction_cmd = [
-        sys.executable, "scripts/run_tier2_extraction.py",
+        sys.executable, "scripts/tier2/tier2_extraction.py",
         "--model-id", model_id,
         "--num-samples", "2",
         "--seq-len", "128",
@@ -39,7 +39,7 @@ def main():
     # Step 2: Phase 5 Curriculum Healing
     # We run just 5 steps on real data to ensure autograd and matrix updates work
     healing_cmd = [
-        sys.executable, "scripts/run_tier2_healing.py",
+        sys.executable, "scripts/tier2/tier2_healing.py",
         "--model-id", model_id,
         "--matrices-path", base_matrices,
         "--output-path", healed_matrices,
@@ -53,13 +53,13 @@ def main():
     run_step(healing_cmd, "Phase 5: Curriculum Fine-Tuning Healing")
     
     # Step 3: E2E Generation using the 'healed' compressed cache
-    # Set Tier 1 size to be extremely small (64) so it forcibly spills to Tier 2 in the prompt
+    # Set Tier 1 size to be extremely small (16) so it forcibly spills to Tier 2 in the prompt
     generation_cmd = [
-        sys.executable, "scripts/run_tier2_llama.py",
+        sys.executable, "scripts/tier2/tier2_llama.py",
         "--model-id", model_id,
         "--matrices-path", healed_matrices,
-        "--tier1-size", "64",
-        "--max-new-tokens", "10"   # Just generate a few tokens to prove it doesn't crash
+        "--tier1-size", "16",
+        "--max-new-tokens", "64"   # Generate enough tokens to guarantee tier 2 cache hits over time
     ]
     run_step(generation_cmd, "Final Evaluation: End-to-End Inference Generation")
     
