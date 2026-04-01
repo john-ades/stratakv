@@ -10,6 +10,10 @@ class StrataKVConfig:
     enable_tier2: bool = False
     enable_tier3: bool = False
     
+    tier3_size: int = 65536
+    tier3_k: int = 4
+    tier3_max_k: int = 4
+    
     # Tier 2 TransMLA Parameters
     num_kv_heads: int = 8
     head_dim: int = 128

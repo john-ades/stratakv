@@ -13,6 +13,7 @@ from .tiers.tier1_recent import Tier1Recent
 from .tiers.tier2_latent import Tier2Latent
 from .compression.transmla import TransMLACruncher
 from .clustering.buffer import AbitClusterBuffer
+from .tiers.tier3_sonic import Tier3Sonic
 
 class StrataKVCache(BaseCache):
     """
@@ -28,6 +29,7 @@ class StrataKVCache(BaseCache):
         self._tier1_recents: List[Optional[Tier1Recent]] = []
         self._tier2_latents: List[Optional[Tier2Latent]] = []
         self._tier3_buffers: List[Optional[AbitClusterBuffer]] = []
+        self._tier3_sonics: List[Optional[Tier3Sonic]] = []
         
         self.seen_tokens = 0
         
@@ -51,8 +53,10 @@ class StrataKVCache(BaseCache):
                 
             if self.config.enable_tier3:
                 self._tier3_buffers.append(AbitClusterBuffer(self.config))
+                self._tier3_sonics.append(Tier3Sonic(self.config.tier3_size, len(self._tier3_sonics)))
             else:
                 self._tier3_buffers.append(None)
+                self._tier3_sonics.append(None)
 
     def update(
         self,
@@ -101,10 +105,24 @@ class StrataKVCache(BaseCache):
             
             # Phase 1: Push latents into the Tier 3 ABIT buffer to detect semantic boundaries
             t3_buf = self._tier3_buffers[layer_idx]
+            t3_sonic = self._tier3_sonics[layer_idx]
+            sonic_cruncher = None
+            if cache_kwargs is not None:
+                sonic_cruncher = cache_kwargs.get("sonic_cruncher", None)
+                
             if t3_buf is not None:
                 sealed_clusters = t3_buf.push(c_kv, k_rope)
-                # Currently we aren't doing anything with `sealed_clusters`
-                # In Phase 3, these will be dispatched to the SONIC cruncher.
+                
+                # Phase 3: Orthogonal Sequence Compression (SONIC Cruncher)
+                if t3_sonic is not None and sonic_cruncher is not None and sealed_clusters:
+                    sonic_cruncher.to(device=dropped_keys.device, dtype=dropped_keys.dtype)
+                    for cluster in sealed_clusters:
+                        k = getattr(self.config, "tier3_k", 4)
+                        # Compress the sequence
+                        c_nexus = sonic_cruncher(cluster.c_kv, k)
+                        # Phase 2: Positional binding, expand Medoid K_rope
+                        k_rope_expanded = cluster.expand_medoid_k_rope(k)
+                        t3_sonic.push(c_nexus, k_rope_expanded)
             
         # 4) Reconstruct the view of the full cache for this layer
         all_k = []
@@ -175,6 +193,17 @@ class StrataKVCache(BaseCache):
         if t2 is None:
             return None, None
         return t2.get_cache()
+        
+    def get_tier3_cache(self, layer_idx: int) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
+        """
+        Returns (C_nexus_t3, K_rope_t3) for the given layer.
+        """
+        if len(self._tier3_sonics) <= layer_idx:
+            return None, None
+        t3 = self._tier3_sonics[layer_idx]
+        if t3 is None:
+            return None, None
+        return t3.get_cache()
 
     def reorder_cache(self, beam_idx: torch.LongTensor):
         """Used in beam search. Not implemented for baseline."""

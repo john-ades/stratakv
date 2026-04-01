@@ -75,7 +75,8 @@ def _strata_llama_attention_forward(
             "sin": sin, 
             "cos": cos, 
             "cache_position": cache_position,
-            "strata_cruncher": getattr(self, "strata_cruncher", None)
+            "strata_cruncher": getattr(self, "strata_cruncher", None),
+            "sonic_cruncher": getattr(self, "sonic_cruncher", None)
         }
         key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx, cache_kwargs)
         
@@ -84,17 +85,36 @@ def _strata_llama_attention_forward(
 
     attn_weights_t1 = torch.matmul(query_states, key_states_t1.transpose(2, 3)) / math.sqrt(self.head_dim)
     
-    attn_weights_t2 = None
-    c_kv_t2, k_rope_t2 = None, None
+    attn_weights_latent = None
+    c_kv_latent_list = []
+    k_rope_latent_list = []
+    
     if isinstance(past_key_values, StrataKVCache) and hasattr(self, "strata_absorber"):
-        c_kv_t2, k_rope_t2 = past_key_values.get_tier2_cache(self.layer_idx)
+        if getattr(self.config, "enable_tier3", False):
+            c_kv_t3, k_rope_t3 = past_key_values.get_tier3_cache(self.layer_idx)
+            if c_kv_t3 is not None and k_rope_t3 is not None:
+                c_kv_latent_list.append(c_kv_t3)
+                k_rope_latent_list.append(k_rope_t3)
+                
+        if getattr(self.config, "enable_tier2", False):
+            c_kv_t2, k_rope_t2 = past_key_values.get_tier2_cache(self.layer_idx)
+            if c_kv_t2 is not None and k_rope_t2 is not None:
+                c_kv_latent_list.append(c_kv_t2)
+                k_rope_latent_list.append(k_rope_t2)
+                
+    c_kv_latent = None
+    k_rope_latent = None
+    if c_kv_latent_list:
+        seq_dim_c = 1 if c_kv_latent_list[0].dim() == 3 else 2
+        c_kv_latent = torch.cat(c_kv_latent_list, dim=seq_dim_c)
+        k_rope_latent = torch.cat(k_rope_latent_list, dim=2)
         
-    if c_kv_t2 is not None and k_rope_t2 is not None:
-        scores_t2_raw = self.strata_absorber.absorb_and_score(query_states, c_kv_t2, k_rope_t2)
-        attn_weights_t2 = scores_t2_raw / math.sqrt(self.head_dim)
+    if c_kv_latent is not None and k_rope_latent is not None:
+        scores_latent_raw = self.strata_absorber.absorb_and_score(query_states, c_kv_latent, k_rope_latent)
+        attn_weights_latent = scores_latent_raw / math.sqrt(self.head_dim)
         
-    if attn_weights_t2 is not None:
-        attn_weights = torch.cat([attn_weights_t2, attn_weights_t1], dim=-1)
+    if attn_weights_latent is not None:
+        attn_weights = torch.cat([attn_weights_latent, attn_weights_t1], dim=-1)
     else:
         attn_weights = attn_weights_t1
 
@@ -107,13 +127,13 @@ def _strata_llama_attention_forward(
     attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
     attn_weights_dropped = nn.functional.dropout(attn_weights, p=self.attention_dropout, training=self.training)
 
-    if attn_weights_t2 is not None:
-        seq_len_t2 = c_kv_t2.size(1)
-        w_t2, w_t1 = torch.split(attn_weights_dropped, [seq_len_t2, key_states.size(2)], dim=-1)
+    if attn_weights_latent is not None:
+        seq_len_latent = c_kv_latent.size(1) if c_kv_latent.dim() == 3 else c_kv_latent.size(2)
+        w_latent, w_t1 = torch.split(attn_weights_dropped, [seq_len_latent, key_states.size(2)], dim=-1)
             
         out_t1 = torch.matmul(w_t1, value_states_t1)
-        out_t2 = self.strata_absorber.decompress_value(w_t2, c_kv_t2)
-        attn_output = out_t1 + out_t2
+        out_latent = self.strata_absorber.decompress_value(w_latent, c_kv_latent)
+        attn_output = out_t1 + out_latent
     else:
         attn_output = torch.matmul(attn_weights_dropped, value_states_t1)
         
@@ -155,5 +175,10 @@ def patch_llama_for_strata(model, config: StrataKVConfig):
                     matrices_path=config.transmla_matrices_path
                 )
                 module.add_module("strata_cruncher", cruncher.to(model.dtype).to(model.device))
+                
+            if getattr(config, "enable_tier3", False):
+                from ...compression.sonic import SonicCruncher
+                sonic = SonicCruncher(dim=config.transmla_target_rank, max_k=getattr(config, "tier3_max_k", 4))
+                module.add_module("sonic_cruncher", sonic.to(model.dtype).to(model.device))
                 
             module.forward = types.MethodType(_strata_llama_attention_forward, module)
