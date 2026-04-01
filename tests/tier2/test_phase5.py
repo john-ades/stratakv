@@ -74,6 +74,13 @@ def test_prepare_for_healing(dummy_llama, strata_config):
 def test_healing_training_step(dummy_llama, strata_config):
     trainer = HealingTrainer(dummy_llama, strata_config)
     
+    # Initialize TransMLA mock parameters so c_kv isn't exactly zero
+    with torch.no_grad():
+        for layer in dummy_llama.model.layers:
+            layer.self_attn.strata_absorber.W_UK.normal_()
+            layer.self_attn.strata_absorber.W_UV.normal_()
+            layer.self_attn.strata_cruncher.R_KV.normal_()
+            
     # Create optimizer
     optimizer = torch.optim.Adam(trainer.get_trainable_parameters(), lr=1e-3)
     

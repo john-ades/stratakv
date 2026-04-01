@@ -58,6 +58,13 @@ def test_hybrid_attention_forward_and_backward(dummy_llama, strata_config):
     for name, param in dummy_llama.named_parameters():
         if "strata_absorber" in name and ("W_UK" in name or "W_UV" in name):
             param.requires_grad = True
+
+    # Initialize TransMLA mock parameters to non-zero so gradients are not identically 0
+    with torch.no_grad():
+        for layer in dummy_llama.model.layers:
+            layer.self_attn.strata_absorber.W_UK.normal_()
+            layer.self_attn.strata_absorber.W_UV.normal_()
+            layer.self_attn.strata_cruncher.R_KV.normal_()
     
     # 2. Simulate an autoregressive generation where cache gets filled
     # First pass: Generate initial tokens to push things into Tier 2.

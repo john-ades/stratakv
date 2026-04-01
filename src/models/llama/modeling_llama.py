@@ -154,6 +154,10 @@ def patch_llama_for_strata(model, config: StrataKVConfig):
     import types
     for name, module in model.named_modules():
         if module.__class__.__name__ == "LlamaAttention":
+            # Patch the module's LlamaConfig to include strata specific flags
+            module.config.enable_tier2 = getattr(config, "enable_tier2", False)
+            module.config.enable_tier3 = getattr(config, "enable_tier3", False)
+            
             if config.enable_tier2:
                 absorber = TransMLAAbsorber(
                     layer_idx=module.layer_idx,
