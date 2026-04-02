@@ -8,6 +8,7 @@ from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from datasets import load_dataset
 from torch.utils.data import DataLoader
+from accelerate import Accelerator
 
 # Add project root to path
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -77,12 +78,13 @@ def heal(
     """
     console.print(f"[bold green]Starting Phase 5 Tier 3 SONIC Healing for {model_id}[/bold green]")
     
+    accelerator = Accelerator()
+    
     if not os.path.exists(matrices_path):
         console.print(f"[bold red]Matrices file not found at {matrices_path}![/bold red]")
         sys.exit(1)
         
-    if device == "auto":
-        device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+    device = accelerator.device
     console.print(f"[bold yellow]Using device: {device}[/bold yellow]")
     
     console.print("Loading model and tokenizer...")
@@ -92,7 +94,6 @@ def heal(
         
     base_model = AutoModelForCausalLM.from_pretrained(
         model_id, 
-        device_map=device, 
         torch_dtype=torch.float16
     )
     
@@ -134,6 +135,10 @@ def heal(
             batch_size=batch_size, 
             collate_fn=lambda b: collate_fn(b, tokenizer, seq_len)
         )
+        
+    trainer.model, optimizer, dataloader = accelerator.prepare(
+        trainer.model, optimizer, dataloader
+    )
     
     console.print("\n[bold green]=== Starting Curriculum Distillation ===[/bold green]")
     
@@ -166,9 +171,9 @@ def heal(
                     abit_threshold=abit_threshold
                 )
                 
-                loss.backward()
+                accelerator.backward(loss)
                 # Gradient clipping to stabilize Transformer block training
-                torch.nn.utils.clip_grad_norm_(trainable_params, max_norm=1.0)
+                accelerator.clip_grad_norm_(trainable_params, max_norm=1.0)
                 optimizer.step()
                 
                 epoch_bar.update(1)
@@ -189,7 +194,8 @@ def heal(
     # Load original structure to overwrite and add Sonic weights
     matrices_dict = torch.load(matrices_path, map_location="cpu", weights_only=True)
     
-    for name, module in base_model.named_modules():
+    unwrapped_model = accelerator.unwrap_model(trainer.model)
+    for name, module in unwrapped_model.named_modules():
         if module.__class__.__name__ == "LlamaAttention":
             l_idx = module.layer_idx
             if hasattr(module, "sonic_cruncher"):
