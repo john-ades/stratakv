@@ -83,6 +83,26 @@ Because the pipeline natively patches attention distributions and loss functions
 accelerate launch scripts/run_experiment.py
 ```
 
+### Docker Deployment
+
+To launch this pipeline seamlessly across unmanaged Spot GPU machines or orchestration layers (like Kubernetes), utilize the included Dockerfile. It leverages Astral `uv` for extremely fast, deterministically locked dependency resolution on top of PyTorch/CUDA.
+
+1. **Build the Image:**
+   ```bash
+   docker build -t stratakv-experiment .
+   ```
+
+2. **Run across GPUs:**
+   Launch the container binding all GPUs. You must attach host IPC memory `(--ipc=host)` to prevent PyTorch DataLoader and DDP broadcast multiprocessing crashes. For W&B telemetry, inject your API token directly into the environment:
+
+   ```bash
+   docker run --gpus all --ipc=host \
+       -e WANDB_API_KEY="your-wandb-api-key" \
+       -v $(pwd)/outputs:/app/outputs \
+       stratakv-experiment
+   ```
+   *Note: Because our base image defines `CMD ["accelerate", "launch", "scripts/run_experiment.py"]`, it automatically scales across the mapped CUDA devices upon startup!*
+
 ### Spot Instance Fault Tolerance
 
 The pipeline is inherently built to survive unmanaged, low-cost spot instance preemptions and terminations. 
