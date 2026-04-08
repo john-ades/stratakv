@@ -119,10 +119,27 @@ def _strata_llama_attention_forward(
         attn_weights = attn_weights_t1
 
     if attention_mask is not None:
-        if attention_mask.size(-1) == attn_weights.size(-1):
-            attn_weights = attn_weights + attention_mask
+        if attn_weights_latent is not None:
+            # Generate a fully visible mask for the latent tokens
+            latent_mask = torch.zeros(
+                (bsz, 1, q_len, attn_weights_latent.size(-1)), 
+                device=attention_mask.device, 
+                dtype=attention_mask.dtype
+            )
+            # Find the actual original attention mask slice
+            if attention_mask.size(-1) == attn_weights_t1.size(-1):
+                t1_mask = attention_mask
+            else:
+                t1_mask = attention_mask[..., -attn_weights_t1.size(-1):]
+            
+            # Combine them: Nexus/latents get 0 (visible)
+            combined_mask = torch.cat([latent_mask, t1_mask], dim=-1)
+            attn_weights = attn_weights + combined_mask
         else:
-            attn_weights = attn_weights + attention_mask[..., -attn_weights.size(-1):]
+            if attention_mask.size(-1) == attn_weights.size(-1):
+                attn_weights = attn_weights + attention_mask
+            else:
+                attn_weights = attn_weights + attention_mask[..., -attn_weights.size(-1):]
 
     attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
     attn_weights_dropped = nn.functional.dropout(attn_weights, p=self.attention_dropout, training=self.training)

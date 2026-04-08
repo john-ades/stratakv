@@ -50,11 +50,12 @@ def test_cache_multi_tenancy_concurrency():
     
     success_count = 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-        futures = [executor.submit(simulate_user_request, cache, i) for i in range(num_users)]
+        future_to_user = {executor.submit(simulate_user_request, cache, i): i for i in range(num_users)}
         
-        for future in concurrent.futures.as_completed(futures):
+        for future in concurrent.futures.as_completed(future_to_user):
+            user_id = future_to_user[future]
             try:
-                user_id, k0, v0, k1, v1 = future.result()
+                result = future.result()
                 success_count += 1
             except Exception as e:
                 # If race conditions occur, cache update might fail 

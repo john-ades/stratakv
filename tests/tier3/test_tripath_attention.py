@@ -130,7 +130,7 @@ def test_tripath_attention():
     # The Attention weights should cover T1 + T2 + T3 lengths!
     T1_len = cache._tier1_recents[0].seq_len
     T2_len = cache._tier2_latents[0].seq_len
-    T3_len = cache._tier3_sonics[0].seq_len
+    T3_len = cache._tier3_sonics[0].max_seq_len
     
     assert weights.size(-1) == T1_len + T2_len + T3_len, (
         f"Weights size {weights.size(-1)} != expected total {T1_len + T2_len + T3_len}"

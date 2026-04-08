@@ -27,14 +27,26 @@ class Tier0Sink(StrataTier):
         keys_to_store = keys[:, :, :take_len, :]
         values_to_store = values[:, :, :take_len, :]
         
-        if self.k_cache is None:
-            self.k_cache = keys_to_store
-            self.v_cache = values_to_store
-        else:
-            self.k_cache = torch.cat([self.k_cache, keys_to_store], dim=2)
-            self.v_cache = torch.cat([self.v_cache, values_to_store], dim=2)
+        if getattr(self, "k_buffer", None) is None:
+            # Pre-allocate buffer for the maximum capacity of this tier
+            k_shape = list(keys.shape)
+            v_shape = list(values.shape)
+            k_shape[2] = self.capacity
+            v_shape[2] = self.capacity
+            
+            self.k_buffer = torch.empty(k_shape, dtype=keys.dtype, device=keys.device)
+            self.v_buffer = torch.empty(v_shape, dtype=values.dtype, device=values.device)
+            self.k_cache = None
+            self.v_cache = None
+            
+        self.k_buffer[:, :, self.seq_len:self.seq_len+take_len, :] = keys_to_store
+        self.v_buffer[:, :, self.seq_len:self.seq_len+take_len, :] = values_to_store
             
         self.seq_len += take_len
+        
+        # update the cache views
+        self.k_cache = self.k_buffer[:, :, :self.seq_len, :]
+        self.v_cache = self.v_buffer[:, :, :self.seq_len, :]
         
         # Remaining tokens to push down
         if take_len < incoming_seq_len:

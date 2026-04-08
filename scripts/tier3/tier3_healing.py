@@ -6,7 +6,7 @@ import random
 from rich.console import Console
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from datasets import load_dataset
+from datasets import load_dataset, interleave_datasets, IterableDataset
 from torch.utils.data import DataLoader
 from accelerate import Accelerator
 
@@ -42,7 +42,7 @@ def heal(
         help="HuggingFace Model ID to heal"
     ),
     dataset_name: str = typer.Option(
-        "HuggingFaceFW/fineweb-edu", 
+        "mixture", 
         "--dataset", "-d",
         help="Dataset name for training"
     ),
@@ -128,6 +128,48 @@ def heal(
     if dataset_name == "dummy":
         console.print("[bold cyan]Generating dummy tensor data for instantaneous smoke testing![/bold cyan]")
         dataloader = [torch.randint(0, 10000, (batch_size, seq_len)) for _ in range(max_steps)]
+    elif dataset_name == "mixture":
+        console.print("[bold cyan]Loading SONIC mixture (SOC, UltraChat, TopiOCQA)...[/bold cyan]")
+        
+        def format_soc(example):
+            text = ""
+            for part in example.get("chat_parts", []):
+                sender = part.get("sender", "User")
+                msgs = part.get("messages", [])
+                text += f"{sender}: " + " ".join(msgs) + "\n"
+            return {"text": text}
+            
+        def format_ultrachat(example):
+            text = ""
+            for msg in example.get("messages", []):
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                text += f"{role}: {content}\n"
+            return {"text": text}
+            
+        def format_coqa(example):
+            text = "Context: " + example.get("story", "") + "\n"
+            questions = example.get("questions", [])
+            answers = example.get("answers", {}).get("input_text", [])
+            for q, a in zip(questions, answers):
+                text += f"User: {q}\nExpert: {a}\n"
+            return {"text": text}
+            
+        ds_soc = load_dataset("marcodsn/SOC-2508", split="train", streaming=True).map(format_soc)
+        ds_soc = ds_soc.select_columns(["text"])
+        
+        ds_ultra = load_dataset("HuggingFaceH4/ultrachat_200k", split="train_sft", streaming=True).map(format_ultrachat)
+        ds_ultra = ds_ultra.select_columns(["text"])
+        
+        ds_coqa = load_dataset("coqa", split="train", streaming=True).map(format_coqa)
+        ds_coqa = ds_coqa.select_columns(["text"])
+        
+        dataset = interleave_datasets([ds_soc, ds_ultra, ds_coqa], probabilities=[0.34, 0.33, 0.33])
+        dataloader = DataLoader(
+            dataset, 
+            batch_size=batch_size, 
+            collate_fn=lambda b: collate_fn(b, tokenizer, seq_len)
+        )
     else:
         dataset = load_dataset(dataset_name, name=dataset_config, split="train", streaming=True)
         dataloader = DataLoader(

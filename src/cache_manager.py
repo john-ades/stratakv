@@ -7,6 +7,8 @@ except ImportError:
     class BaseCache:
         pass
 
+import threading
+
 from .core.config import StrataKVConfig
 from .tiers.tier0_sink import Tier0Sink
 from .tiers.tier1_recent import Tier1Recent
@@ -23,6 +25,7 @@ class StrataKVCache(BaseCache):
     def __init__(self, config: StrataKVConfig):
         super().__init__()
         self.config = config
+        self._lock = threading.Lock()
         
         # We hold lists of tiers per layer index
         self._tier0_sinks: List[Optional[Tier0Sink]] = []
@@ -69,76 +72,79 @@ class StrataKVCache(BaseCache):
         Updates the cache with the new key/value states.
         Then, reconstructs the full kv-cache for this layer to return to the model attention mechanism.
         """
-        self._ensure_initialized(layer_idx)
-        
-        # 1) Pass tokens through Tier 0 Sink first
-        evicted_keys = key_states
-        evicted_values = value_states
-        
-        t0 = self._tier0_sinks[layer_idx]
-        if t0 is not None and evicted_keys is not None:
-            evicted_keys, evicted_values = t0.push(evicted_keys, evicted_values)
+        with self._lock:
+            self._ensure_initialized(layer_idx)
             
-        # 2) Pass whatever spills out into Tier 1 Sliding Window
-        t1 = self._tier1_recents[layer_idx]
-        dropped_keys, dropped_values = None, None
-        if t1 is not None and evicted_keys is not None:
-            # We push evicted from T0 into T1
-            dropped_keys, dropped_values = t1.push(evicted_keys, evicted_values)
+            # 1) Pass tokens through Tier 0 Sink first
+            evicted_keys = key_states
+            evicted_values = value_states
             
-        # 3) Crunch tokens from Tier 1 into Tier 2 via TransMLA
-        t2 = self._tier2_latents[layer_idx]
-        cruncher = None
-        if cache_kwargs is not None:
-            cruncher = cache_kwargs.get("strata_cruncher", None)
-            
-        if t2 is not None and cruncher is not None and dropped_keys is not None and dropped_values is not None:
-            # Ensure matrices are on the right device and dtype
-            cruncher.to(device=dropped_keys.device, dtype=dropped_keys.dtype)
-            
-            # Crunch to latent C_kv and positional K_rope
-            c_kv, k_rope = cruncher(dropped_keys, dropped_values)
-            
-            # Evicted from T2 are just discarded from memory entirely (or moved to Tier 3)
-            # For now, baseline T2 discards them
-            t2.push(c_kv, k_rope)
-            
-            # Phase 1: Push latents into the Tier 3 ABIT buffer to detect semantic boundaries
-            t3_buf = self._tier3_buffers[layer_idx]
-            t3_sonic = self._tier3_sonics[layer_idx]
-            sonic_cruncher = None
+            t0 = self._tier0_sinks[layer_idx]
+            if t0 is not None and evicted_keys is not None:
+                evicted_keys, evicted_values = t0.push(evicted_keys, evicted_values)
+                
+            # 2) Pass whatever spills out into Tier 1 Sliding Window
+            t1 = self._tier1_recents[layer_idx]
+            dropped_keys, dropped_values = None, None
+            if t1 is not None and evicted_keys is not None:
+                # We push evicted from T0 into T1
+                dropped_keys, dropped_values = t1.push(evicted_keys, evicted_values)
+                
+            # 3) Crunch tokens from Tier 1 into Tier 2 via TransMLA
+            t2 = self._tier2_latents[layer_idx]
+            cruncher = None
             if cache_kwargs is not None:
-                sonic_cruncher = cache_kwargs.get("sonic_cruncher", None)
+                cruncher = cache_kwargs.get("strata_cruncher", None)
                 
-            if t3_buf is not None:
-                sealed_clusters = t3_buf.push(c_kv, k_rope)
+            if t2 is not None and cruncher is not None and dropped_keys is not None and dropped_values is not None:
+                # Ensure matrices are on the right device and dtype
+                cruncher.to(device=dropped_keys.device, dtype=dropped_keys.dtype)
                 
-                # Phase 3: Orthogonal Sequence Compression (SONIC Cruncher)
-                if t3_sonic is not None and sonic_cruncher is not None and sealed_clusters:
-                    sonic_cruncher.to(device=dropped_keys.device, dtype=dropped_keys.dtype)
-                    for cluster in sealed_clusters:
-                        k = getattr(self.config, "tier3_k", 4)
-                        # Compress the sequence
-                        c_nexus = sonic_cruncher(cluster.c_kv, k)
-                        # Phase 2: Positional binding, expand Medoid K_rope
-                        k_rope_expanded = cluster.expand_medoid_k_rope(k)
-                        t3_sonic.push(c_nexus, k_rope_expanded)
+                # Crunch to latent C_kv and positional K_rope
+                c_kv, k_rope = cruncher(dropped_keys, dropped_values)
+                
+                # Evicted from T2 are just discarded from memory entirely (or moved to Tier 3)
+                # For now, baseline T2 discards them
+                t2.push(c_kv, k_rope)
+                
+                # Phase 1: Push latents into the Tier 3 ABIT buffer to detect semantic boundaries
+                t3_buf = self._tier3_buffers[layer_idx]
+                t3_sonic = self._tier3_sonics[layer_idx]
+                sonic_cruncher = None
+                if cache_kwargs is not None:
+                    sonic_cruncher = cache_kwargs.get("sonic_cruncher", None)
+                    
+                if t3_buf is not None:
+                    sealed_clusters = t3_buf.push(c_kv, k_rope)
+                    
+                    # Phase 3: Orthogonal Sequence Compression (SONIC Cruncher)
+                    if t3_sonic is not None and sonic_cruncher is not None and sealed_clusters:
+                        sonic_cruncher.to(device=dropped_keys.device, dtype=dropped_keys.dtype)
+                        batch_size = key_states.shape[0]
+                        for cluster in sealed_clusters:
+                            k = getattr(self.config, "tier3_k", 4)
+                            # Compress the sequence
+                            c_nexus = sonic_cruncher(cluster.c_kv, k)
+                            # Phase 2: Positional binding, expand Medoid K_rope
+                            k_rope_expanded = cluster.expand_medoid_k_rope(k)
+                            t3_sonic.push(c_nexus, k_rope_expanded, batch_idx=cluster.batch_idx, batch_size=batch_size)
+                
+            # 4) Reconstruct the view of the full cache for this layer
+            all_k = []
+            all_v = []
             
-        # 4) Reconstruct the view of the full cache for this layer
-        all_k = []
-        all_v = []
+            if t0 is not None:
+                k0, v0 = t0.get_cache()
+                if k0 is not None:
+                    all_k.append(k0)
+                    all_v.append(v0)
+                    
+            if t1 is not None:
+                k1, v1 = t1.get_cache()
+                if k1 is not None:
+                    all_k.append(k1)
+                    all_v.append(v1)
         
-        if t0 is not None:
-            k0, v0 = t0.get_cache()
-            if k0 is not None:
-                all_k.append(k0)
-                all_v.append(v0)
-                
-        if t1 is not None:
-            k1, v1 = t1.get_cache()
-            if k1 is not None:
-                all_k.append(k1)
-                all_v.append(v1)
         
         
         # If no tiers are enabled (unlikely), just return incoming

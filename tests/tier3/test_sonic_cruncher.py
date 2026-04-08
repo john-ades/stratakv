@@ -56,17 +56,17 @@ def test_tier3_sonic_append():
     """ Tests appending to Tier3Sonic """
     tier3 = Tier3Sonic(capacity=50, layer_idx=0)
     
-    batch, num_heads, k, dim = 2, 4, 2, 64
+    batch, num_heads, k, dim = 1, 4, 2, 64
     
     # Push first block
     c_nexus_1 = torch.randn(batch, num_heads, k, dim)
     k_rope_1 = torch.randn(batch, num_heads, k, dim)
     
-    evicted_c, evicted_k = tier3.push(c_nexus_1, k_rope_1)
+    evicted_c, evicted_k = tier3.push(c_nexus_1, k_rope_1, batch_idx=0, batch_size=batch)
     
     assert evicted_c is None
     assert evicted_k is None
-    assert tier3.seq_len == 2
+    assert tier3.max_seq_len == 2
     
     c_nexus_cached, k_rope_cached = tier3.get_cache()
     assert torch.equal(c_nexus_cached, c_nexus_1)
@@ -75,9 +75,9 @@ def test_tier3_sonic_append():
     # Push second block
     c_nexus_2 = torch.randn(batch, num_heads, k, dim)
     k_rope_2 = torch.randn(batch, num_heads, k, dim)
-    tier3.push(c_nexus_2, k_rope_2)
+    tier3.push(c_nexus_2, k_rope_2, batch_idx=0, batch_size=batch)
     
-    assert tier3.seq_len == 4
+    assert tier3.max_seq_len == 4
     c_nexus_cached, k_rope_cached = tier3.get_cache()
     assert c_nexus_cached.shape[2] == 4
     assert torch.equal(c_nexus_cached[:, :, 2:4, :], c_nexus_2)
@@ -92,15 +92,15 @@ def test_tier3_sonic_eviction():
     c_nexus_1 = torch.randn(batch, num_heads, 4, dim)
     k_rope_1 = torch.randn(batch, num_heads, 4, dim)
     
-    evicted_c, evicted_k = tier3.push(c_nexus_1, k_rope_1)
+    evicted_c, evicted_k = tier3.push(c_nexus_1, k_rope_1, batch_idx=0, batch_size=batch)
     assert evicted_c is None
-    assert tier3.seq_len == 4
+    assert tier3.max_seq_len == 4
     
     # Push 3 tokens (total 7, exceeds capacity by 2)
     c_nexus_2 = torch.randn(batch, num_heads, 3, dim)
     k_rope_2 = torch.randn(batch, num_heads, 3, dim)
     
-    evicted_c, evicted_k = tier3.push(c_nexus_2, k_rope_2)
+    evicted_c, evicted_k = tier3.push(c_nexus_2, k_rope_2, batch_idx=0, batch_size=batch)
     
     # Should evict the first 2 tokens
     assert evicted_c is not None
@@ -110,7 +110,7 @@ def test_tier3_sonic_eviction():
     assert evicted_k is not None
     assert torch.equal(evicted_k, k_rope_1[:, :, :2, :])
     
-    assert tier3.seq_len == 5
+    assert tier3.max_seq_len == 5
     
     c_nexus_cached, _ = tier3.get_cache()
     # Cache should contain exactly the last 2 from c_nexus_1 and all 3 from c_nexus_2

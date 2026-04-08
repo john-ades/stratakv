@@ -38,9 +38,9 @@ Tier 3:
 
 
 ### Features
-- [ ] Tiered KV caching system
-- [ ] Dimension Compression via [TransMLA](https://github.com/MuLabPKU/TransMLA)
-- [ ] Sequence Compression via [SONIC](https://arxiv.org/abs/2601.21927v1)
+- [x] Tiered KV caching system
+- [x] Dimension Compression via [TransMLA](https://github.com/MuLabPKU/TransMLA)
+- [x] Sequence Compression via [SONIC](https://arxiv.org/abs/2601.21927v1)
 
 
 ### Future Explorations + Tiers
@@ -56,3 +56,41 @@ Tier 3:
 - [ ] Offline World Model Learning (tbd...trying to take advantage of recent World Model research) 
 - [ ] Efficient Multi-Agent Cache Sharing/Communication via [Agent Vector Protocol](https://github.com/VectorArc/avp-python)
 
+## Running Experiments
+
+To train and distill StrataKV locally or on a remote GPU cluster, we provide a unified fault-tolerant execution script. This orchestration pipeline coordinates Phase 1 extraction, Phase 2 TransMLA Curriculum Healing, and Phase 3 SONIC Distillation.
+
+### Setup and Configuration
+
+1. **Configure Accelerate Environment:**
+   Before running the experiment across multiple GPUs, configure the distributed topology. On your target machine or head node, run:
+   ```bash
+   accelerate config
+   ```
+   *Follow the prompts, configure the amount of distributed processes, and enable `bf16` precision.*
+
+2. **Authenticate Services:**
+   We strictly rely on Weights & Biases for telemetry logging and remote state checkpointing (necessary for spot instance persistence). Authenticate with your dashboard:
+   ```bash
+   wandb login
+   ```
+
+### Execution
+
+Because the pipeline natively patches attention distributions and loss functions across devices via PyTorch Distributed Data Parallelism (DDP), you MUST launch it using `accelerate`:
+
+```bash
+accelerate launch scripts/run_experiment.py
+```
+
+### Spot Instance Fault Tolerance
+
+The pipeline is inherently built to survive unmanaged, low-cost spot instance preemptions and terminations. 
+- **W&B Remote Checkpointing:** Every 500 steps, the active `accelerate` trainer compresses and uploads the local checkpoint snapshot (layer weights, clustered GPU buffers, optimizer states, random topologies) directly into your active W&B run as a flagged `checkpoint` artifact.
+- **Auto-Resumption:** Should the process crash mid-phase, any replacement spot instance spun up utilizing the identical `accelerate launch` command will interrogate W&B, fetch your `latest` checkpoint for the specific phase, and silently orchestrate dataloader synchronization via `accelerator.skip_first_batches`. The architecture guarantees lossless training continuity horizontally without duplication vulnerabilities.
+
+### Evaluation
+
+Once `run_experiment.py` finishes Phase 3 successfully, it exports the target dimension and sequence-constrained components automatically as a standard PyTorch dictionary artifact (e.g. `outputs/experiment_01/healed_t3_sonic.pt`). 
+
+The script additionally patches local memory contexts logically into massive batches, preventing VRAM OOMs during long-context probing queries. Simply integrate the `StrataKVConfig` definitions inside standard language model test beds (NeedleBench, RULER, MTBench) as documented explicitly in the script's post-training console dump!
