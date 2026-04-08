@@ -208,7 +208,8 @@ def main():
     if accelerator.is_main_process:
         os.makedirs(OUTPUT_DIR, exist_ok=True)
         # Note: Init trackers usually requires you to pass `project_name`.
-        accelerator.init_trackers("StrataKV-E2E-Training", config={"model": MODEL_ID})
+        init_kwargs = {"wandb": {"entity": os.environ.get("WANDB_ENTITY")}} if "WANDB_ENTITY" in os.environ else {}
+        accelerator.init_trackers("StrataKV-E2E-Training", config={"model": MODEL_ID}, init_kwargs=init_kwargs)
         console.print(f"[bold cyan]🚀 Starting StrataKV Deployment Pipeline on {accelerator.num_processes} GPUs[/bold cyan]")
 
     tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)

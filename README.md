@@ -1,16 +1,14 @@
-Scalable Tiered Representation Architecture for Token Attention
+# StrataKV
+**Scalable Tiered Representation Architecture for Token Attention**
 
-Must be able to be trained on top of a base model.
-We want to utilize the already powerful open model weights available to start with.
+StrataKV is designed to be trained on top of a base model, utilizing already powerful open model weights as a starting point.
 
-Goal:
-    - Be able to utilize already trained base models
-    - Extremely long term llm inference using on bounded hardware
+**Goal:**
+- Utilize already trained base models.
+- Enable extremely long-term LLM inference on bounded hardware.
 
-Challenge:
-    - Must Balance Information-Theoretic Boundaries of a Cascading memory cache to extend an llms context to the max
-
-
+**Challenge:**
+- Balance information-theoretic boundaries of a cascading memory cache to maximally extend an LLM's context.
 StrataKV is an adaptive, multi-tiered caching architecture designed to intelligently manage and preserve the long-term memory of LLM agents. 
 The system utilizes a cascading pipeline where high-priority context—such as the system prompt and the most recent N tokens—is preserved in an uncompressed L1 cache, while older KV tokens are progressively pushed into deeper tiers. 
 Within these deeper strata, the framework continuously "crunches" the data using customizable, orthogonal compression techniques, such as sequence, channel, and precision compression. 
@@ -62,46 +60,33 @@ To train and distill StrataKV locally or on a remote GPU cluster, we provide a u
 
 ### Setup and Configuration
 
-1. **Configure Accelerate Environment:**
+1. **Install Dependencies:**
+   This project uses `uv` for rapid, deterministic dependency management. Install the environment:
+   ```bash
+   uv sync
+   ```
+
+2. **Configure Accelerate Environment:**
    Before running the experiment across multiple GPUs, configure the distributed topology. On your target machine or head node, run:
    ```bash
-   accelerate config
+   uv run accelerate config
    ```
    *Follow the prompts, configure the amount of distributed processes, and enable `bf16` precision.*
 
-2. **Authenticate Services:**
+3. **Authenticate Services:**
    We strictly rely on Weights & Biases for telemetry logging and remote state checkpointing (necessary for spot instance persistence). Authenticate with your dashboard:
    ```bash
-   wandb login
+   uv run wandb login
    ```
+   *Note: If your organization has disabled personal entities on W&B, make sure to export your team name using `export WANDB_ENTITY="your-team-name"` before running.*
 
 ### Execution
 
 Because the pipeline natively patches attention distributions and loss functions across devices via PyTorch Distributed Data Parallelism (DDP), you MUST launch it using `accelerate`:
 
 ```bash
-accelerate launch scripts/run_experiment.py
+uv run accelerate launch scripts/run_experiment.py
 ```
-
-### Docker Deployment
-
-To launch this pipeline seamlessly across unmanaged Spot GPU machines or orchestration layers (like Kubernetes), utilize the included Dockerfile. It leverages Astral `uv` for extremely fast, deterministically locked dependency resolution on top of PyTorch/CUDA.
-
-1. **Build the Image:**
-   ```bash
-   docker build -t stratakv-experiment .
-   ```
-
-2. **Run across GPUs:**
-   Launch the container binding all GPUs. You must attach host IPC memory `(--ipc=host)` to prevent PyTorch DataLoader and DDP broadcast multiprocessing crashes. For W&B telemetry, inject your API token directly into the environment:
-
-   ```bash
-   docker run --gpus all --ipc=host \
-       -e WANDB_API_KEY="your-wandb-api-key" \
-       -v $(pwd)/outputs:/app/outputs \
-       stratakv-experiment
-   ```
-   *Note: Because our base image defines `CMD ["accelerate", "launch", "scripts/run_experiment.py"]`, it automatically scales across the mapped CUDA devices upon startup!*
 
 ### Spot Instance Fault Tolerance
 
