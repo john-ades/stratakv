@@ -80,8 +80,6 @@ To train and distill StrataKV locally or on a remote GPU cluster, we provide a u
    export WANDB_ENTITY="your-wandb-entity"
    export WANDB_PROJECT="your-wandb-project"
    export HF_TOKEN="your-hf-token"
-   
-   uv run wandb login
    ```
 
 ### Execution
