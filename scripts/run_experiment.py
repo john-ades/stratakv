@@ -5,7 +5,8 @@ import torch
 import gc
 import json
 import wandb
-from accelerate import Accelerator
+from datetime import timedelta
+from accelerate import Accelerator, InitProcessGroupKwargs
 from datasets import load_dataset, interleave_datasets
 from torch.utils.data import DataLoader
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -197,7 +198,8 @@ def main():
         sys.exit(1)
 
     # Initialize Accelerator with Weights & Biases telemetry
-    accelerator = Accelerator(log_with="wandb")
+    timeout_kwargs = InitProcessGroupKwargs(timeout=timedelta(hours=2))
+    accelerator = Accelerator(log_with="wandb", kwargs_handlers=[timeout_kwargs])
     
     MODEL_ID = "meta-llama/Llama-3.2-1B-Instruct" # Change to target architecture base
     OUTPUT_DIR = "outputs/experiment_01"

@@ -134,6 +134,9 @@ def extract_transmla_matrices_for_layer(
     """
     Processes all offline extracted matrices for a single layer.
     """
+    if torch.cuda.is_available():
+        K_layer, V_layer = K_layer.cuda(), V_layer.cuda()
+
     # K_layer represents the raw activations from k_proj: [num_batches, seq_len, num_kv_heads * head_dim]
     batch_size, seq_len, _ = K_layer.shape
     total_tokens = batch_size * seq_len
@@ -171,9 +174,9 @@ def extract_transmla_matrices_for_layer(
     
     return {
         "layer_idx": layer_idx,
-        "U_l": U_l,
+        "U_l": U_l.cpu(),
         "alpha": alpha,
-        "R_KV": R_KV,
+        "R_KV": R_KV.cpu(),
         "K_rope_dim": rope_retained_dim,
         "target_rank": target_rank
     }
