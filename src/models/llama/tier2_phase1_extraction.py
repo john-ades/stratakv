@@ -11,20 +11,27 @@ def calculate_rorope(K_x: torch.Tensor, K_y: torch.Tensor) -> torch.Tensor:
     Computes orthogonal rotation matrix U_l for a RoPE subspace.
     K_x, K_y: [num_tokens, current_dim]
     """
+    # 1. Store original dtype (float16/bfloat16) to cast back later
+    orig_dtype = K_x.dtype
+    
+    # 2. UPCAST to float32 BEFORE matrix multiplication to prevent massive overflow
+    K_x_f32 = K_x.float()
+    K_y_f32 = K_y.float()
+    
     # Expected dimensions: [N, D] where D is the dimension of the subspace
-    sigma_x = K_x.T @ K_x
-    sigma_y = K_y.T @ K_y
+    sigma_x = K_x_f32.T @ K_x_f32
+    sigma_y = K_y_f32.T @ K_y_f32
     sigma_sum = sigma_x + sigma_y
     
     # Eigendecomposition to maximize variance 
-    eigenvalues, eigenvectors = torch.linalg.eigh(sigma_sum.float())
-    eigenvectors = eigenvectors.to(sigma_sum.dtype)
+    eigenvalues, eigenvectors = torch.linalg.eigh(sigma_sum)
     
     # Sort descending
     sorted_indices = torch.argsort(eigenvalues, descending=True)
     U_l = eigenvectors[:, sorted_indices]
     
-    return U_l
+    # 3. Cast back to original dtype for downstream LLaMA compatibility
+    return U_l.to(orig_dtype)
 
 def calculate_bkv_pca(K_nope: torch.Tensor, V: torch.Tensor, target_rank: int) -> Tuple[torch.Tensor, float]:
     """

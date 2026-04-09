@@ -231,7 +231,7 @@ def main():
     # ---------------------------------------------------------
     if accelerator.is_main_process and not os.path.exists(BASE_MATRICES):
         console.print("\n[bold magenta]=== Phase 1: TransMLA Calibration ===[/bold magenta]")
-        run_offline_calibration(MODEL_ID, target_rank=128, rope_dim=64, num_samples=250, seq_len=1024, save_path=BASE_MATRICES)
+        run_offline_calibration(MODEL_ID, target_rank=128, rope_dim=32, num_samples=250, seq_len=1024, save_path=BASE_MATRICES)
     
     accelerator.wait_for_everyone() # BARRIER: Wait for GPU 0 to finish extracting
     
@@ -247,7 +247,7 @@ def main():
             transmla_matrices_path=BASE_MATRICES,
             head_dim=base_model.config.hidden_size // base_model.config.num_attention_heads,
             num_kv_heads=getattr(base_model.config, "num_key_value_heads", base_model.config.num_attention_heads),
-            transmla_target_rank=128, transmla_rope_dim=64
+            transmla_target_rank=128, transmla_rope_dim=32
         )
         
         trainer_t2 = Tier2Trainer(base_model, t2_config)
@@ -301,7 +301,7 @@ def main():
             transmla_matrices_path=T2_MATRICES,
             head_dim=base_model.config.hidden_size // base_model.config.num_attention_heads,
             num_kv_heads=getattr(base_model.config, "num_key_value_heads", base_model.config.num_attention_heads),
-            transmla_target_rank=128, transmla_rope_dim=64
+            transmla_target_rank=128, transmla_rope_dim=32
         )
         
         trainer_t3 = Tier3Trainer(base_model, t3_config, alpha_recon=1.0)
