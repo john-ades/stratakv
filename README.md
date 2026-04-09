@@ -74,11 +74,15 @@ To train and distill StrataKV locally or on a remote GPU cluster, we provide a u
    *Follow the prompts, configure the amount of distributed processes, and enable `bf16` precision.*
 
 3. **Authenticate Services:**
-   We strictly rely on Weights & Biases for telemetry logging and remote state checkpointing (necessary for spot instance persistence). Authenticate with your dashboard:
+   We strictly rely on Weights & Biases for telemetry logging and remote state checkpointing (necessary for spot instance persistence). You also need a Hugging Face token to download the base models and datasets. Authenticate and set your environment variables:
    ```bash
+   export WANDB_ENTITY="your-wandb-entity"
+   export WANDB_PROJECT="your-wandb-project"
+   export HF_TOKEN="your-hf-token"
+   
    uv run wandb login
+   uv run huggingface-cli login
    ```
-   *Note: If your organization has disabled personal entities on W&B, make sure to export your team name using `export WANDB_ENTITY="your-team-name"` before running.*
 
 ### Execution
 

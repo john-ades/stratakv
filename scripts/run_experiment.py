@@ -187,6 +187,15 @@ def save_matrices_safely(accelerator, trainer_model, input_path, output_path, in
 # 4. Master Pipeline
 # ==========================================
 def main():
+    missing_vars = [var for var in ["WANDB_ENTITY", "WANDB_PROJECT", "HF_TOKEN"] if not os.environ.get(var)]
+    if missing_vars:
+        console.print(f"[bold red]Error: Missing required environment variables: {', '.join(missing_vars)}[/bold red]")
+        console.print("[yellow]Please set them before running the experiment, e.g.:[/yellow]")
+        console.print('export WANDB_ENTITY="your-wandb-entity"')
+        console.print('export WANDB_PROJECT="your-wandb-project"')
+        console.print('export HF_TOKEN="your-hf-token"')
+        sys.exit(1)
+
     # Initialize Accelerator with Weights & Biases telemetry
     accelerator = Accelerator(log_with="wandb")
     
@@ -208,8 +217,8 @@ def main():
     if accelerator.is_main_process:
         os.makedirs(OUTPUT_DIR, exist_ok=True)
         # Note: Init trackers usually requires you to pass `project_name`.
-        init_kwargs = {"wandb": {"entity": os.environ.get("WANDB_ENTITY")}} if "WANDB_ENTITY" in os.environ else {}
-        accelerator.init_trackers("StrataKV-E2E-Training", config={"model": MODEL_ID}, init_kwargs=init_kwargs)
+        init_kwargs = {"wandb": {"entity": os.environ.get("WANDB_ENTITY")}}
+        accelerator.init_trackers(os.environ.get("WANDB_PROJECT"), config={"model": MODEL_ID}, init_kwargs=init_kwargs)
         console.print(f"[bold cyan]🚀 Starting StrataKV Deployment Pipeline on {accelerator.num_processes} GPUs[/bold cyan]")
 
     tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
