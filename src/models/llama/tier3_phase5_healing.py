@@ -80,7 +80,8 @@ class Tier3HealingTrainer:
                 module.recon_loss = None
 
         student_cache = StrataKVCache(self.config)
-        student_cache._ensure_initialized(self.model.config.num_hidden_layers - 1)
+        unwrapped_model = getattr(self.model, "module", self.model)
+        student_cache._ensure_initialized(unwrapped_model.config.num_hidden_layers - 1)
         
         prefix_ids = input_ids[:, :prefix_len]
         suffix_ids = input_ids[:, prefix_len:]

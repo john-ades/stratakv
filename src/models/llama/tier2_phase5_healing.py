@@ -64,7 +64,8 @@ class HealingTrainer:
         # Fresh cache for forward pass
         cache = StrataKVCache(self.config)
         # Ensure it knows about the tiers
-        cache._ensure_initialized(self.model.config.num_hidden_layers - 1)
+        unwrapped_model = getattr(self.model, "module", self.model)
+        cache._ensure_initialized(unwrapped_model.config.num_hidden_layers - 1)
                 
         # 1. Forward Prefix to populate Tier 1
         outputs_prefix = self.model(
