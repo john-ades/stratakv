@@ -87,20 +87,28 @@ def harvest_activations(model: nn.Module, tokenizer: AutoTokenizer, dataset, num
         hooks.append(layer.self_attn.v_proj.register_forward_hook(v_hook))
 
     # Prepare dataset
-    # Filter out empty text for robustness
     texts = [t for t in dataset["text"] if len(t.strip()) > 0]
-    encodings = tokenizer("\n\n".join(texts), return_tensors="pt")
-    
-    num_tokens = encodings.input_ids.size(1)
     
     with torch.no_grad():
+        tokenized_so_far = []
+        text_idx = 0
+        
         for i in tqdm(range(num_samples), desc="Harvesting Activations"):
-            start_idx = i * seq_len
-            if start_idx + seq_len > num_tokens:
+            # Ensure we have enough tokens to form a sequence
+            while len(tokenized_so_far) < seq_len and text_idx < len(texts):
+                tokens = tokenizer(texts[text_idx], add_special_tokens=False).input_ids
+                tokenized_so_far.extend(tokens)
+                text_idx += 1
+                
+            if len(tokenized_so_far) < seq_len:
                 print("Reached end of dataset prematurely.")
                 break
                 
-            input_ids = encodings.input_ids[:, start_idx:start_idx+seq_len].to(device)
+            # Extract the correct chunk length
+            chunk = tokenized_so_far[:seq_len]
+            tokenized_so_far = tokenized_so_far[seq_len:]
+            
+            input_ids = torch.tensor([chunk], dtype=torch.long, device=device)
             # Forward pass: we only need the hooked states, ignore the final outputs
             model(input_ids)
             
@@ -186,8 +194,17 @@ def run_offline_calibration(
     
     print(f"Loading tokenizer and model: {model_id}...")
     tokenizer = AutoTokenizer.from_pretrained(model_id)
-    # Using CPU or single GPU automatically
-    model = LlamaForCausalLM.from_pretrained(model_id, device_map="auto", torch_dtype=torch.float16)
+    
+    # Prevent device_map="auto" from causing NCCL deadlocks in Accelerate DDP
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    local_rank = os.environ.get("LOCAL_RANK", None)
+    
+    if local_rank is not None:
+        device_map = {"": f"cuda:{local_rank}"}
+    else:
+        device_map = {"": device} if torch.cuda.is_available() else "auto"
+        
+    model = LlamaForCausalLM.from_pretrained(model_id, device_map=device_map, torch_dtype=torch.float16)
     
     print("Loading calibration dataset (WikiText-2)...")
     dataset = load_dataset("wikitext", "wikitext-2-raw-v1", split="train")
