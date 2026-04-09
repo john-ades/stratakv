@@ -92,9 +92,9 @@ def build_mixed_dataloader(tokenizer, seq_len: int, batch_size: int):
         text += f"Expert: {example.get('Answer', '')}\n"
         return {"text": text}
         
-    ds_soc = load_dataset("marcodsn/SOC-2508", split="train", streaming=True).map(format_soc).select_columns(["text"])
-    ds_ultra = load_dataset("HuggingFaceH4/ultrachat_200k", split="train_sft", streaming=True).map(format_ultrachat).select_columns(["text"])
-    ds_topiocqa = load_dataset("McGill-NLP/TopiOCQA", split="train", streaming=True).map(format_topiocqa).select_columns(["text"])
+    ds_soc = load_dataset("marcodsn/SOC-2508", split="train", streaming=True, trust_remote_code=True).map(format_soc).select_columns(["text"])
+    ds_ultra = load_dataset("HuggingFaceH4/ultrachat_200k", split="train_sft", streaming=True, trust_remote_code=True).map(format_ultrachat).select_columns(["text"])
+    ds_topiocqa = load_dataset("McGill-NLP/TopiOCQA", split="train", streaming=True, trust_remote_code=True).map(format_topiocqa).select_columns(["text"])
     
     # Mix the datasets dynamically
     dataset = interleave_datasets([ds_soc, ds_ultra, ds_topiocqa], probabilities=[0.34, 0.33, 0.33])
