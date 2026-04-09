@@ -244,7 +244,8 @@ def main():
             tier0_size=4, tier1_size=1024, enable_tier0=True, enable_tier1=True, enable_tier2=True, enable_tier3=False,
             transmla_matrices_path=BASE_MATRICES,
             head_dim=base_model.config.hidden_size // base_model.config.num_attention_heads,
-            num_kv_heads=getattr(base_model.config, "num_key_value_heads", base_model.config.num_attention_heads)
+            num_kv_heads=getattr(base_model.config, "num_key_value_heads", base_model.config.num_attention_heads),
+            transmla_target_rank=128, transmla_rope_dim=64
         )
         
         trainer_t2 = Tier2Trainer(base_model, t2_config)
@@ -297,7 +298,8 @@ def main():
             enable_tier0=True, enable_tier1=True, enable_tier2=True, enable_tier3=True,
             transmla_matrices_path=T2_MATRICES,
             head_dim=base_model.config.hidden_size // base_model.config.num_attention_heads,
-            num_kv_heads=getattr(base_model.config, "num_key_value_heads", base_model.config.num_attention_heads)
+            num_kv_heads=getattr(base_model.config, "num_key_value_heads", base_model.config.num_attention_heads),
+            transmla_target_rank=128, transmla_rope_dim=64
         )
         
         trainer_t3 = Tier3Trainer(base_model, t3_config, alpha_recon=1.0)
