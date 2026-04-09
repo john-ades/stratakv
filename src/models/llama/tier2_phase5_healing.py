@@ -75,6 +75,9 @@ class HealingTrainer:
             output_attentions=False
         )
         
+        # --- FIX: Instantly drop the massive unused logits tensor from VRAM ---
+        del outputs_prefix
+        
         # Organic cache spilling from Tier 1 to Tier 2 has already occurred during the prefix pass.
         # The 900+ spilled tokens in Tier 2 have their autograd computationally linked to the Cruncher's R_KV matrix.
         

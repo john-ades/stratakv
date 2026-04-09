@@ -67,6 +67,10 @@ class Tier3HealingTrainer:
             )
             teacher_logits = outputs_teacher.logits[:, prefix_len:-1, :].contiguous()
             
+        # --- FIX: Free 2GB+ of teacher outputs/cache ---
+        del outputs_teacher
+        del teacher_cache
+            
         # 2. Prepare Student Pass
         self.config.enable_tier2 = True
         self.config.enable_tier3 = True
@@ -93,6 +97,9 @@ class Tier3HealingTrainer:
             use_cache=True,
             output_attentions=False
         )
+        
+        # --- FIX: Instantly drop the massive unused prefix logits tensor ---
+        del outputs_prefix
         
         # 4. Forward Suffix
         position_ids = torch.arange(prefix_len, seq_len, dtype=torch.long, device=input_ids.device)

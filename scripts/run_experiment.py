@@ -211,7 +211,7 @@ def main():
     T3_MATRICES = f"{OUTPUT_DIR}/healed_t3_sonic.pt"
     
     BATCH_SIZE = 1
-    SEQ_LEN = 4096
+    SEQ_LEN = 2048
     MAX_STEPS_T2 = 5000
     MAX_STEPS_T3 = 10000
     CHECKPOINT_STEPS = 500
@@ -243,7 +243,7 @@ def main():
         
         base_model = AutoModelForCausalLM.from_pretrained(MODEL_ID, torch_dtype=torch.bfloat16)
         t2_config = StrataKVConfig(
-            tier0_size=4, tier1_size=1024, enable_tier0=True, enable_tier1=True, enable_tier2=True, enable_tier3=False,
+            tier0_size=4, tier1_size=512, enable_tier0=True, enable_tier1=True, enable_tier2=True, enable_tier3=False,
             transmla_matrices_path=BASE_MATRICES,
             head_dim=base_model.config.hidden_size // base_model.config.num_attention_heads,
             num_kv_heads=getattr(base_model.config, "num_key_value_heads", base_model.config.num_attention_heads),
@@ -265,7 +265,7 @@ def main():
             if batch_ids is None or global_step >= MAX_STEPS_T2: break
             
             optimizer_t2.zero_grad()
-            loss = trainer_t2.train_step(batch_ids.to(accelerator.device), prefix_len=2048)
+            loss = trainer_t2.train_step(batch_ids.to(accelerator.device), prefix_len=1024)
             accelerator.backward(loss)
             optimizer_t2.step()
             
@@ -296,7 +296,7 @@ def main():
         
         base_model = AutoModelForCausalLM.from_pretrained(MODEL_ID, torch_dtype=torch.bfloat16)
         t3_config = StrataKVConfig(
-            tier0_size=4, tier1_size=256, tier2_size=1024, tier3_size=65536,
+            tier0_size=4, tier1_size=256, tier2_size=512, tier3_size=65536,
             enable_tier0=True, enable_tier1=True, enable_tier2=True, enable_tier3=True,
             transmla_matrices_path=T2_MATRICES,
             head_dim=base_model.config.hidden_size // base_model.config.num_attention_heads,
@@ -323,7 +323,7 @@ def main():
             # Dynamic budgeting override (simulating fluctuating context clusters)
             loss, loss_dict = trainer_t3.train_step(
                 batch_ids.to(accelerator.device), 
-                prefix_len=2048, 
+                prefix_len=1024, 
                 k_budget=random.choice([2, 4]), 
                 abit_threshold=random.uniform(0.3, 0.7)
             )
