@@ -89,7 +89,7 @@ def test_tripath_attention():
     assert cache._tier2_latents[0].k_cache is None
     
     # Step 2: More tokens to trigger spillover to T2 and then seal cluster to T3
-    for i in range(3, 10):
+    for i in range(3, 20):
         # We process 1 token at a time
         hidden_t = torch.randn(1, 1, config.hidden_size)
         cos_t = cos[:, :1, :]

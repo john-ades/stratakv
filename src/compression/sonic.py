@@ -36,7 +36,7 @@ class SonicCruncher(nn.Module):
             c_nexus: The compressed latent representation.
                      Shape matches spatial rank of input: (batch, num_heads, k, dim) or (batch, k, dim)
         """
-        print(f"SONIC CALLED: seq_len={c_kv.shape[-2]} training={self.training}")
+        # print(f"SONIC CALLED: seq_len={c_kv.shape[-2]} training={self.training}")
         assert 1 <= k <= self.max_k, f"k must be between 1 and {self.max_k}, got {k}"
         
         is_3d = False

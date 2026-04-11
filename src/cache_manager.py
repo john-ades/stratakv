@@ -103,9 +103,8 @@ class StrataKVCache(BaseCache):
                 # Crunch to latent C_kv and positional K_rope
                 c_kv, k_rope = cruncher(dropped_keys, dropped_values)
                 
-                # Evicted from T2 are just discarded from memory entirely (or moved to Tier 3)
-                # For now, baseline T2 discards them
-                t2.push(c_kv, k_rope)
+                # Push into Tier 2 and capture tokens that fall out of its capacity!
+                evicted_c_kv, evicted_k_rope = t2.push(c_kv, k_rope)
                 
                 # Phase 1: Push latents into the Tier 3 ABIT buffer to detect semantic boundaries
                 t3_buf = self._tier3_buffers[layer_idx]
@@ -114,8 +113,9 @@ class StrataKVCache(BaseCache):
                 if cache_kwargs is not None:
                     sonic_cruncher = cache_kwargs.get("sonic_cruncher", None)
                     
-                if t3_buf is not None:
-                    sealed_clusters = t3_buf.push(c_kv, k_rope)
+                # ONLY push to Tier 3 if tokens actually fell out of Tier 2
+                if t3_buf is not None and evicted_c_kv is not None and evicted_k_rope is not None:
+                    sealed_clusters = t3_buf.push(evicted_c_kv, evicted_k_rope)
                     
                     # Phase 3: Orthogonal Sequence Compression (SONIC Cruncher)
                     if t3_sonic is not None and sonic_cruncher is not None and sealed_clusters:
