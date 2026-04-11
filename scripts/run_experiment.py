@@ -237,7 +237,7 @@ def main():
     # ---------------------------------------------------------
     if accelerator.is_main_process and not os.path.exists(BASE_MATRICES):
         console.print("\n[bold magenta]=== Phase 1: TransMLA Calibration ===[/bold magenta]")
-        run_offline_calibration(MODEL_ID, target_rank=128, rope_dim=32, num_samples=250, seq_len=1024, save_path=BASE_MATRICES)
+        run_offline_calibration(MODEL_ID, target_rank=128, rope_dim=32, num_samples=250, seq_len=1024, save_path=BASE_MATRICES, device=str(accelerator.device))
     
     accelerator.wait_for_everyone() # BARRIER: Wait for GPU 0 to finish extracting
     
