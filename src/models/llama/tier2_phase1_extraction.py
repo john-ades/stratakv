@@ -195,7 +195,8 @@ def run_offline_calibration(
     rope_dim: int = 64,
     num_samples: int = 50,
     seq_len: int = 1024,
-    save_path: str = "outputs/transmla_matrices.pt"
+    save_path: str = "outputs/transmla_matrices.pt",
+    device: str = None
 ):
     """
     Orchestrates the offline calibration process for LLaMA TransMLA extraction.
@@ -206,7 +207,12 @@ def run_offline_calibration(
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     
     # Prevent device_map="auto" from causing NCCL deadlocks in Accelerate DDP
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    if device is not None:
+        device_map = {"": device}
+    else:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        device_map = {"": device} if torch.cuda.is_available() else "auto"
+    
     local_rank = os.environ.get("LOCAL_RANK", None)
     
     if local_rank is not None:

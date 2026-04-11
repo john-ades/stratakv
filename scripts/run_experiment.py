@@ -189,6 +189,10 @@ def save_matrices_safely(accelerator, trainer_model, input_path, output_path, in
 # 4. Master Pipeline
 # ==========================================
 def main():
+    if not torch.cuda.is_available():
+        console.print("[bold red]CRITICAL ERROR: GPUs not detected! Check NVIDIA drivers and CUDA version.[/bold red]")
+        sys.exit(1)
+    
     missing_vars = [var for var in ["WANDB_ENTITY", "WANDB_PROJECT", "HF_TOKEN"] if not os.environ.get(var)]
     if missing_vars:
         console.print(f"[bold red]Error: Missing required environment variables: {', '.join(missing_vars)}[/bold red]")
