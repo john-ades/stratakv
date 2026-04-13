@@ -227,6 +227,18 @@ def main():
         # Note: Init trackers usually requires you to pass `project_name`.
         init_kwargs = {"wandb": {"entity": os.environ.get("WANDB_ENTITY")}}
         accelerator.init_trackers(os.environ.get("WANDB_PROJECT"), config={"model": MODEL_ID}, init_kwargs=init_kwargs)
+        
+        # --- ADD THIS BLOCK ---
+        if wandb.run is not None:
+            # Tell W&B to plot Phase 2 charts against t2_step
+            wandb.define_metric("t2_step")
+            wandb.define_metric("T2_*", step_metric="t2_step")
+            
+            # Tell W&B to plot Phase 3 charts against t3_step
+            wandb.define_metric("t3_step")
+            wandb.define_metric("T3_*", step_metric="t3_step")
+        # ----------------------
+        
         console.print(f"[bold cyan]🚀 Starting StrataKV Deployment Pipeline on {accelerator.num_processes} GPUs[/bold cyan]")
 
     tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
@@ -276,7 +288,10 @@ def main():
             optimizer_t2.step()
             
             if accelerator.is_main_process and global_step % 25 == 0:
-                accelerator.log({"T2_Loss": loss.item()}, step=global_step)
+                accelerator.log({
+                    "T2_Loss": loss.item(),
+                    "t2_step": global_step  # <--- Moved inside the dict
+                })
                 console.print(f"T2 Step {global_step}/{MAX_STEPS_T2} | Loss: {loss.item():.4f}")
             
             global_step += 1
@@ -338,7 +353,12 @@ def main():
             optimizer_t3.step()
             
             if accelerator.is_main_process and global_step % 25 == 0:
-                accelerator.log({"T3_Total": loss_dict["Total"], "T3_KD": loss_dict["L_KD"], "T3_Recon": loss_dict["L_Recon"]}, step=global_step)
+                accelerator.log({
+                    "T3_Total": loss_dict["Total"], 
+                    "T3_KD": loss_dict["L_KD"], 
+                    "T3_Recon": loss_dict["L_Recon"],
+                    "t3_step": global_step  # <--- Moved inside the dict
+                })
                 console.print(f"T3 Step {global_step}/{MAX_STEPS_T3} | KD: {loss_dict['L_KD']:.3f} | Recon: {loss_dict['L_Recon']:.3f}")
             
             global_step += 1
