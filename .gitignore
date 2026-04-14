@@ -8,3 +8,13 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Outputs
+outputs/
+
+# Junk 
+.idea
+.pytest_cache
+.env
+.DS_Store
+*.pt
