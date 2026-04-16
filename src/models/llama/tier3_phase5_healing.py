@@ -122,24 +122,45 @@ class Tier3HealingTrainer:
         
         l_kd = loss_fct(log_student.view(-1, log_student.size(-1)), log_teacher.view(-1, log_teacher.size(-1)))
         
-        # Calculate Recon Loss
+        # Calculate Recon Loss, Entropy, and Layer-wise Breakdown
         l_recon = 0.0
+        entropy = 0.0 
         recon_count = 0
+        layer_recons = {}
+        
         for module in self.model.modules():
             if hasattr(module, "recon_loss") and module.recon_loss is not None:
-                l_recon += module.recon_loss
+                loss_val = module.recon_loss
+                l_recon += loss_val
+                
+                l_idx = getattr(module, 'layer_idx', recon_count)
+                layer_recons[f"L_Recon_L{l_idx}"] = loss_val.item()
+                
+                if hasattr(module, "attn_entropy") and module.attn_entropy is not None:
+                    entropy += module.attn_entropy
+                    module.attn_entropy = None
+                    
                 recon_count += 1
                 module.recon_loss = None
                 
         if recon_count > 0:
             l_recon = l_recon / recon_count
+            entropy = entropy / recon_count
             
         total_loss = l_kd + self.alpha_recon * l_recon
+        
+        # ---> ADD THIS: Verify tokens actually spilled into Tier 2 and Tier 3 <---
+        t2_len = student_cache._tier2_latents[0].seq_len if (len(student_cache._tier2_latents) > 0 and student_cache._tier2_latents[0]) else 0
+        t3_len = student_cache._tier3_sonics[0].max_seq_len if (len(student_cache._tier3_sonics) > 0 and student_cache._tier3_sonics[0]) else 0
         
         loss_dict = {
             "Total": total_loss.item() if isinstance(total_loss, torch.Tensor) else total_loss,
             "L_KD": l_kd.item(),
-            "L_Recon": l_recon.item() if isinstance(l_recon, torch.Tensor) else l_recon
+            "L_Recon": l_recon.item() if isinstance(l_recon, torch.Tensor) else l_recon,
+            "Attn_Entropy": entropy.item() if isinstance(entropy, torch.Tensor) else entropy,
+            "T2_Cache_Len": t2_len,
+            "T3_Cache_Len": t3_len
         }
+        loss_dict.update(layer_recons)
         
         return total_loss, loss_dict

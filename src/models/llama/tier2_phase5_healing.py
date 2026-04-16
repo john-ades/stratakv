@@ -45,7 +45,7 @@ class HealingTrainer:
                 params.append(param)
         return params
 
-    def train_step(self, input_ids: torch.Tensor, prefix_len: int) -> torch.Tensor:
+    def train_step(self, input_ids: torch.Tensor, prefix_len: int) -> tuple[torch.Tensor, dict]:
         """
         Executes a single curriculum training step:
         1. Forward on prefix
@@ -101,4 +101,12 @@ class HealingTrainer:
         loss_fct = nn.CrossEntropyLoss()
         loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
         
-        return loss
+        # ---> ADD THIS BLOCK <---
+        t2_len = cache._tier2_latents[0].seq_len if (len(cache._tier2_latents) > 0 and cache._tier2_latents[0]) else 0
+            
+        metrics = {
+            "Total": loss.item(),
+            "Perplexity": torch.exp(loss).item(),
+            "T2_Cache_Len": t2_len
+        }
+        return loss, metrics

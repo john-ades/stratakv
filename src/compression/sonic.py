@@ -63,6 +63,16 @@ class SonicCruncher(nn.Module):
         attn_weights = torch.matmul(q, k_states.transpose(-1, -2)) / math.sqrt(dim)
         attn_probs = F.softmax(attn_weights, dim=-1)
         
+        # ---> ADD THIS BLOCK: Track Attention Entropy <---
+        if self.training:
+            # Shannon Entropy: -sum(p * log(p)). Higher = uniform, Lower = sharp/focused.
+            entropy = -torch.sum(attn_probs * torch.log(attn_probs + 1e-9), dim=-1).mean()
+            if not hasattr(self, 'attn_entropy') or self.attn_entropy is None:
+                self.attn_entropy = entropy
+            else:
+                self.attn_entropy = self.attn_entropy + entropy
+        # -------------------------------------------------
+
         # attn_probs: (..., k, seq_len), v_states: (..., seq_len, dim) -> c_nexus: (..., k, dim)
         c_nexus = torch.matmul(attn_probs, v_states)
         

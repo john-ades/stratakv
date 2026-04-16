@@ -161,7 +161,7 @@ def heal(
             
             try:
                 # 1. Forward pass mapping (Prefix / Suffix)
-                loss = trainer.train_step(batch_input_ids, prefix_len=prefix_len)
+                loss, loss_dict = trainer.train_step(batch_input_ids, prefix_len=prefix_len)
                 
                 # 2. Backprop
                 accelerator.backward(loss)

@@ -283,16 +283,37 @@ def main():
             if batch_ids is None or global_step >= MAX_STEPS_T2: break
             
             optimizer_t2.zero_grad()
-            loss = trainer_t2.train_step(batch_ids.to(accelerator.device), prefix_len=1024)
+            # CHANGE: Unpack dict
+            loss, loss_dict = trainer_t2.train_step(batch_ids.to(accelerator.device), prefix_len=1024)
             accelerator.backward(loss)
+            
+            # --- NEW: Track Global Gradient Norm ---
+            grad_norm = accelerator.clip_grad_norm_(trainer_t2.get_trainable_parameters(), 1.0)
             optimizer_t2.step()
             
             if accelerator.is_main_process and global_step % 25 == 0:
-                accelerator.log({
-                    "T2_Loss": loss.item(),
-                    "t2_step": global_step  # <--- Moved inside the dict
-                })
-                console.print(f"T2 Step {global_step}/{MAX_STEPS_T2} | Loss: {loss.item():.4f}")
+                log_data = {
+                    "T2_Loss": loss_dict["Total"],
+                    "T2_Perplexity": loss_dict["Perplexity"],
+                    "T2_Cache_Len": loss_dict["T2_Cache_Len"],
+                    "T2_Grad_Norm": grad_norm.item() if isinstance(grad_norm, torch.Tensor) else grad_norm,
+                    "t2_step": global_step 
+                }
+                
+                # --- NEW: Track Parameter Norms ---
+                t2_norms, t2_counts = {}, {}
+                for name, param in trainer_t2.model.named_parameters():
+                    if param.requires_grad:
+                        for k in ["W_UK", "W_UV", "R_KV"]:
+                            if k in name:
+                                t2_norms[f"T2_Norm_{k}"] = t2_norms.get(f"T2_Norm_{k}", 0.0) + param.data.norm().item()
+                                t2_counts[k] = t2_counts.get(k, 0) + 1
+                for k in t2_counts:
+                    t2_norms[f"T2_Norm_{k}"] /= t2_counts[k]
+                log_data.update(t2_norms)
+                
+                accelerator.log(log_data)
+                console.print(f"T2 Step {global_step}/{MAX_STEPS_T2} | Loss: {loss.item():.4f} | Grad: {log_data['T2_Grad_Norm']:.3f} | CacheLen: {loss_dict['T2_Cache_Len']}")
             
             global_step += 1
 
@@ -341,25 +362,49 @@ def main():
             if batch_ids is None or global_step >= MAX_STEPS_T3: break
             
             optimizer_t3.zero_grad()
-            # Dynamic budgeting override (simulating fluctuating context clusters)
+            k_budget = random.choice([2, 4])
+            abit_threshold = random.uniform(0.3, 0.7)
+            
+            # CHANGE: Unpack dict
             loss, loss_dict = trainer_t3.train_step(
                 batch_ids.to(accelerator.device), 
                 prefix_len=1024, 
-                k_budget=random.choice([2, 4]), 
-                abit_threshold=random.uniform(0.3, 0.7)
+                k_budget=k_budget, 
+                abit_threshold=abit_threshold
             )
             accelerator.backward(loss)
-            accelerator.clip_grad_norm_(trainer_t3.get_trainable_parameters(), 1.0)
+            
+            # --- NEW: Track Global Gradient Norm ---
+            grad_norm = accelerator.clip_grad_norm_(trainer_t3.get_trainable_parameters(), 1.0)
             optimizer_t3.step()
             
             if accelerator.is_main_process and global_step % 25 == 0:
-                accelerator.log({
-                    "T3_Total": loss_dict["Total"], 
-                    "T3_KD": loss_dict["L_KD"], 
-                    "T3_Recon": loss_dict["L_Recon"],
-                    "t3_step": global_step  # <--- Moved inside the dict
-                })
-                console.print(f"T3 Step {global_step}/{MAX_STEPS_T3} | KD: {loss_dict['L_KD']:.3f} | Recon: {loss_dict['L_Recon']:.3f}")
+                log_data = {
+                    "T3_Total": loss_dict.pop("Total"), 
+                    "T3_KD": loss_dict.pop("L_KD"), 
+                    "T3_Recon": loss_dict.pop("L_Recon"),
+                    "T3_Grad_Norm": grad_norm.item() if isinstance(grad_norm, torch.Tensor) else grad_norm,
+                    "T3_K_Budget": k_budget,
+                    "T3_ABIT_Threshold": abit_threshold,
+                    "t3_step": global_step 
+                }
+                # Attach everything else (Layer Recons, Entropy, Cache Lens)
+                log_data.update({f"T3_{k}": v for k, v in loss_dict.items()})
+                
+                # --- NEW: Track Parameter Norms ---
+                t3_norms, t3_counts = {}, {}
+                for name, param in trainer_t3.model.named_parameters():
+                    if param.requires_grad:
+                        for k in ["nexus_base", "q_proj", "k_proj", "v_proj", "o_proj"]:
+                            if k in name:
+                                t3_norms[f"T3_Norm_{k}"] = t3_norms.get(f"T3_Norm_{k}", 0.0) + param.data.norm().item()
+                                t3_counts[k] = t3_counts.get(k, 0) + 1
+                for k in t3_counts:
+                    t3_norms[f"T3_Norm_{k}"] /= t3_counts[k]
+                log_data.update(t3_norms)
+                
+                accelerator.log(log_data)
+                console.print(f"T3 Step {global_step}/{MAX_STEPS_T3} | KD: {log_data['T3_KD']:.3f} | Recon: {log_data['T3_Recon']:.3f} | Ent: {log_data.get('T3_Attn_Entropy', 0):.2f} | Grad: {log_data['T3_Grad_Norm']:.3f}")
             
             global_step += 1
 
