@@ -117,7 +117,8 @@ class Tier3HealingTrainer:
         
         # Calculate KD Loss
         # --- NEW: Mask out padding tokens from KD calculation ---
-        pad_token_id = getattr(self.model.config, "pad_token_id", getattr(self.model.config, "eos_token_id", None))
+        unwrapped_model = getattr(self.model, "module", self.model)
+        pad_token_id = getattr(unwrapped_model.config, "pad_token_id", getattr(unwrapped_model.config, "eos_token_id", None))
         if isinstance(pad_token_id, list): pad_token_id = pad_token_id[0]
 
         if pad_token_id is not None:
