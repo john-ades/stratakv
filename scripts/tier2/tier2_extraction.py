@@ -9,6 +9,7 @@ sys.path.append(project_root)
 
 # Import the core extraction function
 from src.models.llama.tier2_phase1_extraction import run_offline_calibration
+from src.core.config import DEFAULT_MODEL_ID
 
 app = typer.Typer(help="Tier 2 Phase 1: TransMLA Offline Calibration Extraction")
 console = Console()
@@ -16,7 +17,7 @@ console = Console()
 @app.command()
 def extract(
     model_id: str = typer.Option(
-        "meta-llama/Llama-3.2-1B-Instruct",
+        DEFAULT_MODEL_ID,
         "--model-id", "-m",
         help="HuggingFace Model ID to calibrate"
     ),

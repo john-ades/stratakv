@@ -17,7 +17,7 @@ from rich.console import Console
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_root)
 
-from src.core.config import StrataKVConfig
+from src.core.config import StrataKVConfig, DEFAULT_MODEL_ID
 from src.cache_manager import StrataKVCache
 from src.models.llama.tier2_phase1_extraction import run_offline_calibration
 from src.models.llama.tier2_phase5_healing import HealingTrainer as Tier2Trainer
@@ -207,7 +207,7 @@ def main():
     ddp_kwargs = DistributedDataParallelKwargs(broadcast_buffers=False)
     accelerator = Accelerator(log_with="wandb", kwargs_handlers=[timeout_kwargs, ddp_kwargs])
     
-    MODEL_ID = "meta-llama/Llama-3.2-1B-Instruct" # Change to target architecture base
+    MODEL_ID = DEFAULT_MODEL_ID # Change to target architecture base
     OUTPUT_DIR = "outputs/experiment_01"
     CHECKPOINT_DIR_T2 = os.path.join(OUTPUT_DIR, "checkpoints/t2_latest")
     CHECKPOINT_DIR_T3 = os.path.join(OUTPUT_DIR, "checkpoints/t3_latest")
@@ -383,7 +383,7 @@ from src.core.config import StrataKVConfig
 from src.models.llama.modeling_llama import patch_llama_for_strata
 from scripts.run_experiment import enable_benchmark_mode
 
-model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-3.2-1B-Instruct")
+model = AutoModelForCausalLM.from_pretrained(DEFAULT_MODEL_ID)
 config = StrataKVConfig(enable_tier2=True, enable_tier3=True, transmla_matrices_path="outputs/experiment_01/healed_t3_sonic.pt")
 
 patch_llama_for_strata(model, config)

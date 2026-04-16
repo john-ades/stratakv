@@ -5,6 +5,7 @@ from tqdm import tqdm
 from transformers import LlamaForCausalLM, AutoTokenizer
 from datasets import load_dataset
 from typing import Tuple, Dict, Any
+from src.core.config import DEFAULT_MODEL_ID
 
 def calculate_rorope(K_x: torch.Tensor, K_y: torch.Tensor) -> torch.Tensor:
     """
@@ -256,7 +257,7 @@ def run_offline_calibration(
 if __name__ == "__main__":
     # Example usage for testing locally
     run_offline_calibration(
-        model_id="mlx-community/Llama-3.2-1B-Instruct", # Example model ID matching user habits
+        model_id=DEFAULT_MODEL_ID, # Example model ID matching user habits
         target_rank=128,
         num_samples=10, # Short sample for smoke testing
         seq_len=512,

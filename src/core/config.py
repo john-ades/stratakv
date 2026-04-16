@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+DEFAULT_MODEL_ID = "meta-llama/Llama-3.2-1B-Instruct"
+
 @dataclass
 class StrataKVConfig:
     tier0_size: int = 4

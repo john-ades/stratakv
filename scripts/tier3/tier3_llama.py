@@ -9,7 +9,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(project_root)
 
-from src.core.config import StrataKVConfig
+from src.core.config import StrataKVConfig, DEFAULT_MODEL_ID
 from src.cache_manager import StrataKVCache
 from src.models.llama.modeling_llama import patch_llama_for_strata
 
@@ -19,7 +19,7 @@ console = Console()
 @app.command()
 def generate(
     model_id: str = typer.Option(
-        "meta-llama/Llama-3.2-1B-Instruct",
+        DEFAULT_MODEL_ID,
         "--model-id", "-m",
         help="HuggingFace Model ID to evaluate"
     ),

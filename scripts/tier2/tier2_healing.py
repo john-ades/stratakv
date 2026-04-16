@@ -13,7 +13,7 @@ from accelerate import Accelerator
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(project_root)
 
-from src.core.config import StrataKVConfig
+from src.core.config import StrataKVConfig, DEFAULT_MODEL_ID
 from src.models.llama.tier2_phase5_healing import HealingTrainer
 from src.compression.transmla import TransMLACruncher, TransMLAAbsorber
 
@@ -37,7 +37,7 @@ def collate_fn(batch, tokenizer, max_length):
 @app.command()
 def heal(
     model_id: str = typer.Option(
-        "meta-llama/Llama-3.2-1B-Instruct",
+        DEFAULT_MODEL_ID,
         "--model-id", "-m",
         help="HuggingFace Model ID to heal"
     ),

@@ -6,7 +6,7 @@ import torch
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_root)
 
-from src.core.config import StrataKVConfig
+from src.core.config import StrataKVConfig, DEFAULT_MODEL_ID
 from src.cache_manager import StrataKVCache
 try:
     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -33,7 +33,7 @@ def main():
     print(f"StrataKV Configuration: T0={config.tier0_size}, T1={config.tier1_size}")
     
     # Normally we load the model. (Defaulting to a 1B Instruct Llama 3 for memory testing)
-    model_id = "meta-llama/Llama-3.2-1B-Instruct" 
+    model_id = DEFAULT_MODEL_ID 
     
     print(f"Loading tokenizer and model ({model_id})...")
     try:

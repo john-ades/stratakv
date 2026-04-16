@@ -1,6 +1,13 @@
 import sys
+import os
 import subprocess
 from rich.console import Console
+
+# Add project root to python path
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(project_root)
+
+from src.core.config import DEFAULT_MODEL_ID
 
 console = Console()
 
@@ -20,7 +27,7 @@ def main():
     console.print("[bold cyan]🚀 Starting StrataKV Tier 2 End-to-End Smoke Test Pipeline 🚀[/bold cyan]\n")
     
     # Common parameters for a fast smoke test
-    model_id = "meta-llama/Llama-3.2-1B-Instruct"
+    model_id = DEFAULT_MODEL_ID
     base_matrices = "outputs/smoke_test_base.pt"
     healed_matrices = "outputs/smoke_test_healed.pt"
     
