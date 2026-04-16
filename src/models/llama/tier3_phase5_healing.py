@@ -124,7 +124,7 @@ class Tier3HealingTrainer:
         if pad_token_id is not None:
             mask = (suffix_ids[:, 1:] != pad_token_id).contiguous().view(-1)
         else:
-            mask = torch.ones_like(suffix_ids[:, 1:]).contiguous().view(-1, dtype=torch.bool)
+            mask = torch.ones_like(suffix_ids[:, 1:], dtype=torch.bool).contiguous().view(-1)
             
         if mask.sum() == 0:
             l_kd = student_logits.sum() * 0.0
