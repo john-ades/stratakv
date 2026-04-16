@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-DEFAULT_MODEL_ID = "meta-llama/Llama-3.2-1B-Instruct"
+DEFAULT_MODEL_ID = "meta-llama/Llama-3.1-8B"
 
 @dataclass
 class StrataKVConfig:
