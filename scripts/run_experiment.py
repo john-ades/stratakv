@@ -9,7 +9,7 @@ from datetime import timedelta
 from accelerate import Accelerator, InitProcessGroupKwargs
 from accelerate.utils import DistributedDataParallelKwargs
 from datasets import load_dataset, interleave_datasets
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, IterableDataset
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from rich.console import Console
 
@@ -101,13 +101,35 @@ def build_mixed_dataloader(tokenizer, seq_len: int, batch_size: int):
     # Mix the datasets dynamically
     dataset = interleave_datasets([ds_soc, ds_ultra, ds_topiocqa], probabilities=[0.34, 0.33, 0.33])
     
+    # === THE FIX: Continuous Token Packing Generator ===
+    def pack_generator():
+        buffer = []
+        for item in dataset:
+            text = item.get("text", "")
+            if not text.strip(): continue
+            
+            # Tokenize WITHOUT padding and append EOS to cleanly separate conversations
+            tokens = tokenizer(text, add_special_tokens=False).input_ids
+            
+            eos = tokenizer.eos_token_id
+            if isinstance(eos, list): eos = eos[0]
+            if eos is not None: tokens.append(eos)
+                
+            buffer.extend(tokens)
+            
+            # Whenever the buffer exceeds seq_len, yield a dense chunk
+            while len(buffer) >= seq_len:
+                yield buffer[:seq_len]
+                buffer = buffer[seq_len:]
+
+    class PackedDataset(IterableDataset):
+        def __iter__(self):
+            return pack_generator()
+            
     def collate_fn(batch):
-        texts = [item["text"] for item in batch if len(item["text"].strip()) > 0]
-        if not texts: return None
-        encodings = tokenizer(texts, truncation=True, max_length=seq_len, padding="max_length", return_tensors="pt")
-        return encodings.input_ids
+        return torch.tensor(batch, dtype=torch.long)
         
-    return DataLoader(dataset, batch_size=batch_size, collate_fn=collate_fn)
+    return DataLoader(PackedDataset(), batch_size=batch_size, collate_fn=collate_fn)
 
 # ==========================================
 # 2. Evaluation / Benchmark Monkey-Patch
@@ -280,11 +302,12 @@ def main():
             dataloader_t2 = accelerator.skip_first_batches(dataloader_t2, global_step)
 
         for batch_ids in dataloader_t2:
-            if batch_ids is None or global_step >= MAX_STEPS_T2: break
+            if batch_ids is None: continue
+            if global_step >= MAX_STEPS_T2: break
             
             optimizer_t2.zero_grad()
             # CHANGE: Unpack dict
-            loss, loss_dict = trainer_t2.train_step(batch_ids.to(accelerator.device), prefix_len=1024)
+            loss, loss_dict = trainer_t2.train_step(batch_ids.to(accelerator.device), prefix_len=1536)
             accelerator.backward(loss)
             
             # --- NEW: Track Global Gradient Norm ---
@@ -359,7 +382,8 @@ def main():
 
         import random
         for batch_ids in dataloader_t3:
-            if batch_ids is None or global_step >= MAX_STEPS_T3: break
+            if batch_ids is None: continue
+            if global_step >= MAX_STEPS_T3: break
             
             optimizer_t3.zero_grad()
             k_budget = random.choice([2, 4])
@@ -368,7 +392,7 @@ def main():
             # CHANGE: Unpack dict
             loss, loss_dict = trainer_t3.train_step(
                 batch_ids.to(accelerator.device), 
-                prefix_len=1024, 
+                prefix_len=1792, 
                 k_budget=k_budget, 
                 abit_threshold=abit_threshold
             )

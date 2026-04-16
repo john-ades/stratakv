@@ -116,11 +116,28 @@ class Tier3HealingTrainer:
         student_logits = student_logits_full[:, :-1, :].contiguous()
         
         # Calculate KD Loss
-        loss_fct = nn.KLDivLoss(reduction="batchmean", log_target=True)
-        log_student = nn.functional.log_softmax(student_logits, dim=-1)
-        log_teacher = nn.functional.log_softmax(teacher_logits, dim=-1)
-        
-        l_kd = loss_fct(log_student.view(-1, log_student.size(-1)), log_teacher.view(-1, log_teacher.size(-1)))
+        # --- NEW: Mask out padding tokens from KD calculation ---
+        pad_token_id = getattr(self.model.config, "pad_token_id", getattr(self.model.config, "eos_token_id", None))
+        if isinstance(pad_token_id, list): pad_token_id = pad_token_id[0]
+
+        if pad_token_id is not None:
+            mask = (suffix_ids[:, 1:] != pad_token_id).contiguous().view(-1)
+        else:
+            mask = torch.ones_like(suffix_ids[:, 1:]).contiguous().view(-1, dtype=torch.bool)
+            
+        if mask.sum() == 0:
+            l_kd = student_logits.sum() * 0.0
+        else:
+            loss_fct = nn.KLDivLoss(reduction="none", log_target=True)
+            log_student = nn.functional.log_softmax(student_logits, dim=-1)
+            log_teacher = nn.functional.log_softmax(teacher_logits, dim=-1)
+            
+            l_kd_all = loss_fct(
+                log_student.view(-1, log_student.size(-1)), 
+                log_teacher.view(-1, log_teacher.size(-1))
+            ).sum(dim=-1)
+            
+            l_kd = l_kd_all[mask].mean()
         
         # Calculate Recon Loss, Entropy, and Layer-wise Breakdown
         l_recon = 0.0

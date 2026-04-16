@@ -96,10 +96,22 @@ class HealingTrainer:
         logits = outputs_suffix.logits # [batch, suffix_len, vocab_size]
         
         shift_logits = logits[..., :-1, :].contiguous()
-        shift_labels = suffix_ids[..., 1:].contiguous()
+        shift_labels = suffix_ids[..., 1:].contiguous().clone()
         
-        loss_fct = nn.CrossEntropyLoss()
-        loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+        # --- NEW: Safely ignore padding tokens ---
+        pad_token_id = getattr(self.model.config, "pad_token_id", getattr(self.model.config, "eos_token_id", None))
+        if pad_token_id is not None:
+            if isinstance(pad_token_id, list):
+                for pid in pad_token_id: shift_labels[shift_labels == pid] = -100
+            else:
+                shift_labels[shift_labels == pad_token_id] = -100
+                
+        # Protect against NaN if the entire suffix is padded
+        if (shift_labels != -100).sum() == 0:
+            loss = shift_logits.sum() * 0.0 
+        else:
+            loss_fct = nn.CrossEntropyLoss(ignore_index=-100)
+            loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
         
         # ---> ADD THIS BLOCK <---
         t2_len = cache._tier2_latents[0].seq_len if (len(cache._tier2_latents) > 0 and cache._tier2_latents[0]) else 0
