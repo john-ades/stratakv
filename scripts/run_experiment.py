@@ -74,24 +74,17 @@ def load_checkpoint(accelerator, checkpoint_dir, phase_name):
 def build_mixed_dataloader(tokenizer, seq_len: int, batch_size: int):
     # Format SOC
     def format_soc(example):
-        text = ""
-        for part in example.get("chat_parts", []):
-            text += f"{part.get('sender', 'User')}: {' '.join(part.get('messages', []))}\n"
-        return {"text": text}
+        # SOC typically uses 'dialogue' or 'messages'
+        return {"text": "\n".join([f"{m.get('role', 'user')}: {m.get('content', '')}" for m in example.get("dialogue", [])])}
         
     # Format UltraChat
     def format_ultrachat(example):
-        text = ""
-        for msg in example.get("messages", []):
-            text += f"{msg.get('role', 'user')}: {msg.get('content', '')}\n"
-        return {"text": text}
+        return {"text": "\n".join([f"{m.get('role', 'user')}: {m.get('content', '')}" for m in example.get("messages", [])])}
         
     # Format TopiOCQA (Targeting specific nested schema)
     def format_topiocqa(example):
-        context = example.get("Gold_passage", {}).get("text", "") if example.get("Gold_passage") else ""
-        text = f"Context: {context}\n"
-        text += f"User: {example.get('Question', '')}\n"
-        text += f"Expert: {example.get('Answer', '')}\n"
+        # TopiOCQA uses lowercase keys
+        text = f"Context: {example.get('context', '')}\nUser: {example.get('question', '')}\nExpert: {example.get('answer', '')}\n"
         return {"text": text}
         
     ds_soc = load_dataset("marcodsn/SOC-2508", split="train", streaming=True).map(format_soc).select_columns(["text"])
@@ -99,7 +92,7 @@ def build_mixed_dataloader(tokenizer, seq_len: int, batch_size: int):
     ds_topiocqa = load_dataset("json", data_files="https://huggingface.co/datasets/McGill-NLP/TopiOCQA/resolve/main/data/topiocqa_train.jsonl", split="train", streaming=True).map(format_topiocqa).select_columns(["text"])
     
     # Mix the datasets dynamically
-    dataset = interleave_datasets([ds_soc, ds_ultra, ds_topiocqa], probabilities=[0.34, 0.33, 0.33])
+    dataset = interleave_datasets([ds_soc, ds_ultra, ds_topiocqa], probabilities=[0.34, 0.33, 0.33], stopping_strategy="all_exhausted")
     
     # === THE FIX: Continuous Token Packing Generator ===
     def pack_generator():
